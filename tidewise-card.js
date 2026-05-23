@@ -129,6 +129,32 @@ const STYLES = `
   .error{color:#c04444}
   .spinner { width: 28px; height: 28px; border: 2px solid rgba(255,255,255,0.40); border-top-color: var(--wave); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
   @keyframes spin { to{transform:rotate(360deg)} }
+
+  :host([dark]) {
+    --wave: #4ab0cc; --wave-dark: #2a90aa; --gold: #e8b84b;
+    --low-color: #4ab0cc; --high-color: #2ab8a8; --text: #e0f0ff; --text-muted: #90b8cc;
+  }
+  :host([dark]) .card-outer {
+    background: linear-gradient(135deg, rgba(5,20,45,0.82), rgba(8,28,55,0.72));
+    border: 1px solid rgba(74,176,204,0.25);
+    box-shadow: 0 5px 24px rgba(0,0,0,0.50);
+  }
+  :host([dark]) .card-outer::before {
+    background: linear-gradient(90deg, transparent, rgba(74,176,204,0.50), transparent);
+  }
+  :host([dark]) .current-row {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(74,176,204,0.22);
+  }
+  :host([dark]) .tide-pill {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(74,176,204,0.22);
+  }
+  :host([dark]) .score-elite { background: rgba(22,163,74,0.25); }
+  :host([dark]) .score-prime { background: rgba(37,99,235,0.25); }
+  :host([dark]) .score-good  { background: rgba(8,145,178,0.25); }
+  :host([dark]) .score-fair  { background: rgba(245,158,11,0.25); }
+  :host([dark]) .score-slow  { background: rgba(220,38,38,0.25); }
 `;
 
 class TideWiseCard extends HTMLElement {
@@ -187,8 +213,10 @@ class TideWiseCard extends HTMLElement {
       show_fishing_score: config.show_fishing_score !== false,
       auto_sources: config.auto_sources !== false,
       auto_surf_forecast: config.auto_surf_forecast !== false,
-      nws_office: String(config.nws_office || "").trim().toUpperCase()
+      nws_office: String(config.nws_office || "").trim().toUpperCase(),
+      dark_mode: config.dark_mode === true
     };
+    this.toggleAttribute("dark", this._config.dark_mode);
     this._stationMeta = null;
     if (this._config.provider === "dfo") this._fetchDfoStationMeta();
     this._render();
@@ -1164,7 +1192,7 @@ class TideWiseCard extends HTMLElement {
 
     requestAnimationFrame(() => {
       this._chartCanvas = this.shadowRoot.getElementById("tideCanvas");
-      this._drawChart(chartPredictions, now, cur, unitLabel, fish?.scores || null, fish?.details || null, [nextHigh, nextLow].filter(Boolean));
+      this._drawChart(chartPredictions, now, cur, unitLabel, fish?.scores || null, fish?.details || null, [nextHigh, nextLow].filter(Boolean), this._config.dark_mode);
     });
   }
 
@@ -1185,7 +1213,7 @@ class TideWiseCard extends HTMLElement {
       </div>`;
   }
 
-  _drawChart(predictions, now, cur, unitLabel, fishScores, fishDetails, tideEvents = []) {
+  _drawChart(predictions, now, cur, unitLabel, fishScores, fishDetails, tideEvents = [], dark = false) {
     const canvas = this._chartCanvas;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
@@ -1210,7 +1238,7 @@ class TideWiseCard extends HTMLElement {
     const toX = (p) => padL + ((this._parsePredictionTime(p.t).getTime() - startMs) / spanMs) * cW;
     const toY = (v) => padT + cH - ((v - minV) / (maxV - minV)) * cH;
 
-    ctx.strokeStyle = "rgba(10,30,45,0.15)";
+    ctx.strokeStyle = dark ? "rgba(255,255,255,0.10)" : "rgba(10,30,45,0.15)";
     ctx.lineWidth = 1;
     for (let i = 0; i <= 3; i++) {
       const v = minV + (i / 3) * (maxV - minV);
@@ -1219,7 +1247,7 @@ class TideWiseCard extends HTMLElement {
       ctx.moveTo(padL, y);
       ctx.lineTo(W - padR, y);
       ctx.stroke();
-      ctx.fillStyle = "rgba(10,30,45,0.65)";
+      ctx.fillStyle = dark ? "rgba(224,240,255,0.70)" : "rgba(10,30,45,0.65)";
       ctx.font = "bold 9px monospace";
       ctx.textAlign = "right";
       ctx.fillText(v.toFixed(1), padL - 3, y + 3);
@@ -1294,13 +1322,13 @@ class TideWiseCard extends HTMLElement {
       if (lx + lw + 8 > W - padR) lx = W - padR - lw - 8;
       if (ly < padT) ly = ey + 10;
       if (ly > H - padB - 16) ly = ey - 20;
-      ctx.fillStyle = "rgba(255,255,255,0.88)";
-      ctx.strokeStyle = "rgba(42,122,148,0.45)";
+      ctx.fillStyle = dark ? "rgba(8,28,55,0.88)" : "rgba(255,255,255,0.88)";
+      ctx.strokeStyle = dark ? "rgba(74,176,204,0.55)" : "rgba(42,122,148,0.45)";
       ctx.lineWidth = 1;
       this._roundedRect(ctx, lx, ly, lw + 8, 15, 4);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = "#0a1e28";
+      ctx.fillStyle = dark ? "#e0f0ff" : "#0a1e28";
       ctx.textAlign = "left";
       ctx.fillText(label, lx + 4, ly + 10);
     });
@@ -1311,7 +1339,7 @@ class TideWiseCard extends HTMLElement {
       const y = toY(parseFloat(p.v));
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     });
-    ctx.strokeStyle = "#2a7a94";
+    ctx.strokeStyle = dark ? "#4ab0cc" : "#2a7a94";
     ctx.lineWidth = 2.5;
     ctx.lineJoin = "round";
     ctx.stroke();
@@ -1342,13 +1370,13 @@ class TideWiseCard extends HTMLElement {
     if (bx < padL) bx = padL;
     if (bx + tw + 10 > W - padR) bx = W - padR - tw - 10;
     if (by < padT) by = ny + 8;
-    ctx.fillStyle = "rgba(255,255,255,0.92)";
-    ctx.strokeStyle = "rgba(42,122,148,0.55)";
+    ctx.fillStyle = dark ? "rgba(8,28,55,0.92)" : "rgba(255,255,255,0.92)";
+    ctx.strokeStyle = dark ? "rgba(74,176,204,0.60)" : "rgba(42,122,148,0.55)";
     ctx.lineWidth = 1;
     this._roundedRect(ctx, bx, by, tw + 10, 16, 4);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#0a1e28";
+    ctx.fillStyle = dark ? "#e0f0ff" : "#0a1e28";
     ctx.textAlign = "left";
     ctx.fillText(lbl, bx + 5, by + 11);
   }
@@ -1670,6 +1698,10 @@ class TideWiseCardEditor extends HTMLElement {
             </label>
           </div>
           <label class="check">
+            <input id="darkMode" type="checkbox" ${config.dark_mode ? "checked" : ""}>
+            Dark mode
+          </label>
+          <label class="check">
             <input id="showFishing" type="checkbox" ${config.show_fishing_score !== false ? "checked" : ""}>
             Show fishing score
           </label>
@@ -1737,6 +1769,7 @@ class TideWiseCardEditor extends HTMLElement {
     this.shadowRoot.getElementById("title")?.addEventListener("change", (event) => this._setValue("title", event.target.value || "TideWise"));
     this.shadowRoot.getElementById("units")?.addEventListener("change", (event) => this._setValue("units", event.target.value));
     this.shadowRoot.getElementById("mode")?.addEventListener("change", (event) => this._setValue("mode", event.target.value));
+    this.shadowRoot.getElementById("darkMode")?.addEventListener("change", (event) => this._setValue("dark_mode", event.target.checked));
     this.shadowRoot.getElementById("showFishing")?.addEventListener("change", (event) => this._setValue("show_fishing_score", event.target.checked));
     this.shadowRoot.getElementById("autoSources")?.addEventListener("change", (event) => this._setValue("auto_sources", event.target.checked));
     this.shadowRoot.getElementById("autoSurfForecast")?.addEventListener("change", (event) => this._setValue("auto_surf_forecast", event.target.checked));
