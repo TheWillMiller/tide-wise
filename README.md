@@ -1,14 +1,14 @@
 # TideWise
 
 <p align="center">
-  <img src="tidewise-icon.svg" alt="TideWise wave icon" width="96">
+  <img src="tidewise-icon.png" alt="TideWise wave icon" width="96">
 </p>
 
 [![GitHub release](https://img.shields.io/github/v/release/TheWillMiller/tide-wise)](https://github.com/TheWillMiller/tide-wise/releases)
 [![Validate](https://github.com/TheWillMiller/tide-wise/actions/workflows/validate.yml/badge.svg)](https://github.com/TheWillMiller/tide-wise/actions/workflows/validate.yml)
 [![GitHub stars](https://img.shields.io/github/stars/TheWillMiller/tide-wise?style=social)](https://github.com/TheWillMiller/tide-wise/stargazers)
 
-**Current release candidate:** `v0.4.5`
+**Latest release:** `v0.4.7`
 
 TideWise is a Home Assistant dashboard (Lovelace) custom card for NOAA tide predictions, current tide height, next high/low tides, and optional fishing bite-window scoring.
 
@@ -16,15 +16,15 @@ TideWise is a Home Assistant dashboard (Lovelace) custom card for NOAA tide pred
 
 ### Main TideWise Card
 
-![TideWise card showing current tide, tide chart, moon phase, and fishing window](TIDE_CARD.png)
+<img src="TIDE_CARD.png" alt="TideWise card showing current tide, tide chart, moon phase, and fishing window" width="720">
 
 ### NOAA Station Picker
 
-![TideWise NOAA station picker in the visual editor](TideStations.png)
+<img src="TideStations.png" alt="TideWise NOAA station picker in the visual editor" width="720">
 
 ### Visual Editor
 
-![TideWise visual editor configuration screen](Visual%20Editor.png)
+<img src="Visual%20Editor.png" alt="TideWise visual editor configuration screen" width="720">
 
 It combines NOAA tide data with local Home Assistant entities such as weather, wind, water temperature, surf height, pressure, rain, and rip current risk. Missing optional entities are allowed; TideWise falls back to neutral scoring where possible.
 
@@ -47,6 +47,8 @@ Helpful details include Home Assistant version, HACS version, TideWise version, 
 
 - NOAA tide predictions using a configurable station ID
 - Current interpolated tide height
+- Water temperature display when available
+- Wind display when available
 - Next high and low tide
 - 24-hour tide chart
 - High/low fallback for NOAA stations without full interval predictions
@@ -113,7 +115,7 @@ type: module
 For quick testing before installing locally, you can add this dashboard resource:
 
 ```yaml
-url: https://cdn.jsdelivr.net/gh/TheWillMiller/tide-wise@v0.4.5/tidewise-card.js
+url: https://cdn.jsdelivr.net/gh/TheWillMiller/tide-wise@v0.4.7/tidewise-card.js
 type: module
 ```
 
@@ -206,8 +208,9 @@ TideWise includes a Home Assistant visual editor. When adding the card from the 
 
 - Choose 50 common NOAA tide stations from a dropdown
 - Enter a custom NOAA station ID
-- Set latitude and longitude
-- Use your Home Assistant home latitude/longitude
+- Set fishing/forecast latitude and longitude
+- Fill coordinates from the selected NOAA station
+- Use your Home Assistant home latitude/longitude when that matches your fishing area
 - Select English or metric units
 - Select fishing mode
 - Enable or disable fishing score
@@ -216,6 +219,8 @@ TideWise includes a Home Assistant visual editor. When adding the card from the 
 - Set the recommended dashboard size
 
 The station dropdown is a 50-station starter list, not a complete NOAA station database. If your station is not listed, choose **Custom station ID** and paste the NOAA CO-OPS station ID.
+
+Latitude and longitude are used for fishing-score context such as NWS forecast lookup, surf/rip forecast lookup, and moon/solunar timing. For best results, use coordinates near the tide gauge, beach, inlet, or fishing area.
 
 ## Auto Sources
 
@@ -274,8 +279,8 @@ When optional data is missing, TideWise falls back to the data it has available.
 | `auto_sources` | No | `true` | Fetch public NOAA/NWS weather and marine observations directly where available. |
 | `auto_surf_forecast` | No | `true` | Try to parse NWS Surf Zone Forecast text for surf height, rip current risk, and water temperature. |
 | `nws_office` | No | Auto from NWS point metadata | Optional NWS office code such as `ILM`, `CHS`, or `SGX` for Surf Zone Forecast products. |
-| `latitude` | No | Home Assistant home latitude, then Cherry Grove fallback | Latitude for moon/solunar scoring. |
-| `longitude` | No | Home Assistant home longitude, then Cherry Grove fallback | Longitude for moon/solunar scoring. |
+| `latitude` | No | Home Assistant home latitude, then Cherry Grove fallback | Fishing/forecast latitude for NWS lookup and moon/solunar scoring. |
+| `longitude` | No | Home Assistant home longitude, then Cherry Grove fallback | Fishing/forecast longitude for NWS lookup and moon/solunar scoring. |
 | `weather_entity` | No | First available weather entity | Weather condition source. |
 | `water_temp_entity` | No |  | Water temperature sensor. Fahrenheit and Celsius are supported. |
 | `wave_height_entity` | No |  | Wave/surf height sensor. Feet and meters are supported. |
@@ -320,7 +325,7 @@ Try:
 
 If HACS still shows an old README, the installed card file may still be current while the HACS display cache is stale.
 
-If HACS shows a short value like `214b6c2` instead of `v0.4.5`, that is a GitHub commit hash. HACS shows commit hashes when a repository has tags but no full GitHub Release yet. Publishing a full GitHub Release makes HACS show the release version instead.
+If HACS shows a short value like `214b6c2` instead of `v0.4.7`, that is a GitHub commit hash. HACS shows commit hashes when a repository has tags but no full GitHub Release yet. Publishing a full GitHub Release makes HACS show the release version instead.
 
 ### Card does not show up
 
@@ -413,3 +418,31 @@ tidewise-card.js
 ```
 
 For HACS default repository submission, TideWise is a dashboard/custom card. HACS validation/submission uses the `plugin` category internally for dashboard plugins.
+
+Run the local syntax check before opening a pull request:
+
+```bash
+npm run check
+```
+
+## Roadmap
+
+Planned areas for future releases:
+
+- Map-based fishing/forecast coordinate picker
+- More station presets and station discovery improvements
+- International tide-provider research for non-NOAA regions
+- Further fishing outlook calibration based on tester feedback
+- Additional mobile layout polish
+
+## Contributing
+
+Bug reports, confirmed-station reports, and focused feature requests are welcome through GitHub Issues.
+
+For code changes:
+
+1. Keep TideWise as a dashboard/custom card, not an integration.
+2. Preserve existing HACS custom repository install behavior.
+3. Keep changes scoped and update `CHANGELOG.md` when behavior changes.
+4. Run `npm run check`.
+5. Include screenshots for visible UI changes when practical.

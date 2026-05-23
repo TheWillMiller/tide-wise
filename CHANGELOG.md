@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added frontend syntax-check GitHub Actions workflow.
+- Added feature request issue template.
+- Added HACS default submission prep notes.
+- Added README roadmap and contribution guidance.
+
+### Changed
+
+- Updated issue template placeholders to the current release.
+- Expanded package keywords for HACS/Home Assistant discoverability.
+
+## 0.4.7
+
+### Added
+
+- Added a compact wind chip to the current tide row when wind data is available.
+
+### Fixed
+
+- Stabilized fishing outlook labels with a deadband so tiny score changes do not constantly flip between nearby bands.
+- Smoothed chart score colors with a small rolling average.
+- Fixed fishing/forecast coordinate priority so configured coordinates are used before the Home Assistant home fallback.
+
+### Changed
+
+- Updated release references to `v0.4.7`.
+
+## 0.4.6
+
+### Added
+
+- Added a compact water temperature chip to the tide/fishing header when water temperature data is available.
+- Added a visual editor button to fill fishing/forecast coordinates from the NOAA station location.
+
+### Changed
+
+- Widened the visual editor title field and improved long-title wrapping on the card.
+- Clarified that latitude/longitude are fishing/forecast coordinates, not necessarily the Home Assistant home location.
+- Updated release references to `v0.4.6`.
+
 ## 0.4.5
 
 ### Changed

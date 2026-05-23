@@ -82,16 +82,18 @@ const STYLES = `
   }
   ha-card { background: transparent !important; box-shadow: none !important; border-radius: 22px !important; }
   .card-outer::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(42,122,148,0.62), transparent); }
-  .header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
-  .title { font-size: 28px; font-weight: 800; color: var(--text); white-space: nowrap; letter-spacing: -0.02em; }
-  .subtitle { font-size: 13px; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase; font-weight: 650; white-space: nowrap; }
-  .current-row { display: flex; align-items: center; gap: 13px; background: rgba(255,255,255,0.35); border: 1px solid rgba(42,122,148,0.20); border-radius: 14px; padding: 7px 13px; margin-bottom: 6px; }
+  .header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
+  .title { font-size: 28px; font-weight: 800; color: var(--text); line-height: 1.05; letter-spacing: 0; overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+  .subtitle { font-size: 13px; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase; font-weight: 650; white-space: nowrap; padding-top: 8px; }
+  .current-row { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; background: rgba(255,255,255,0.35); border: 1px solid rgba(42,122,148,0.20); border-radius: 14px; padding: 7px 13px; margin-bottom: 6px; }
   .current-icon { font-size: 22px; animation: bob 3s ease-in-out infinite; flex-shrink: 0; }
   @keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
   .current-label { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--wave-dark); margin-bottom: 2px; font-weight: 750; }
   .current-value { font-family: var(--font-mono); font-size: 36px; font-weight: 800; color: var(--text); line-height: 1; }
   .current-unit { font-size: 18px; color: var(--text-muted); font-weight: 650; }
   .direction-chip { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 18px; color: var(--wave-dark); font-weight: 750; flex-shrink: 0; }
+  .condition-chip { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--wave-dark); background: rgba(255,255,255,0.48); border: 1px solid rgba(42,122,148,0.22); border-radius: 99px; padding: 4px 10px; white-space: nowrap; font-weight: 800; flex-shrink: 0; }
+  .condition-spacer { flex: 1 1 auto; min-width: 12px; }
   .pulse-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--wave); box-shadow: 0 0 0 3px rgba(42,122,148,0.25); animation: pulse 2s ease-in-out infinite; flex-shrink: 0; }
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.75)} }
   .chart-section { margin-bottom: 5px; }
@@ -104,6 +106,7 @@ const STYLES = `
   .score-good { background: rgba(42,122,148,0.12); color: var(--wave-dark); }
   .score-fair { background: rgba(232,184,75,0.20); color: #8a6a10; }
   .score-slow { background: rgba(192,80,48,0.14); color: #8a3018; }
+  .water-temp-chip { font-size: 13px; color: var(--wave-dark); background: rgba(255,255,255,0.52); border: 1px solid rgba(42,122,148,0.25); border-radius: 99px; padding: 2px 9px; white-space: nowrap; font-weight: 800; }
   .fish-moon { font-size: 13px; color: var(--text-muted); font-weight: 650; white-space: nowrap; }
   .chart-wrap { position: relative; height: 95px; border-radius: 10px; overflow: hidden; }
   canvas { display: block; width: 100%; height: 100%; }
@@ -169,6 +172,7 @@ class TideWiseCard extends HTMLElement {
     this._clockInterval = null;
     this._chartCanvas = null;
     this._stationMeta = null;
+    this._fishBand = null;
   }
 
   static getStubConfig() {
@@ -191,6 +195,7 @@ class TideWiseCard extends HTMLElement {
 
   setConfig(config) {
     if (!config.station) throw new Error("TideWise requires a station ID.");
+    const previousConfig = this._config || {};
     this._config = {
       title: config.title || "TideWise",
       station: String(config.station),
@@ -219,6 +224,7 @@ class TideWiseCard extends HTMLElement {
     this.toggleAttribute("dark", this._config.dark_mode);
     this._stationMeta = null;
     if (this._config.provider === "dfo") this._fetchDfoStationMeta();
+    if (previousConfig.station !== this._config.station || previousConfig.mode !== this._config.mode) this._fishBand = null;
     this._render();
     this._fetchData();
   }
@@ -639,8 +645,8 @@ class TideWiseCard extends HTMLElement {
   _getHomeLatLon() {
     const home = this._hass?.states?.["zone.home"];
     return {
-      lat: Number(home?.attributes?.latitude) || this._config.latitude || 33.688,
-      lon: Number(home?.attributes?.longitude) || this._config.longitude || -78.886
+      lat: this._config.latitude || Number(home?.attributes?.latitude) || 33.688,
+      lon: this._config.longitude || Number(home?.attributes?.longitude) || -78.886
     };
   }
 
@@ -674,6 +680,20 @@ class TideWiseCard extends HTMLElement {
     return Number.isFinite(coopsBearing) ? coopsBearing : this._parseNwsWindDirection();
   }
 
+  _formatWind(speedMph, bearing) {
+    if (!Number.isFinite(speedMph)) return "";
+    const speed = this._config.units === "metric" ? `${Math.round(speedMph * 1.60934)} km/h` : `${Math.round(speedMph)} mph`;
+    const direction = this._formatWindDirection(bearing);
+    return `Wind ${speed}${direction ? " " + direction : ""}`;
+  }
+
+  _formatWindDirection(bearing) {
+    const b = Number(bearing);
+    if (!Number.isFinite(b)) return "";
+    const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+    return dirs[Math.round((((b % 360) + 360) % 360) / 22.5) % 16];
+  }
+
   _getPressureHpa(weather) {
     const direct = this._getNumericEntity(this._config.pressure_entity);
     if (direct) {
@@ -702,6 +722,12 @@ class TideWiseCard extends HTMLElement {
     if (coopsTemp !== null) return coopsTemp;
     const surfTemp = Number(this._autoData?.surf?.waterTempF);
     return Number.isFinite(surfTemp) ? surfTemp : null;
+  }
+
+  _formatWaterTemp(tempF) {
+    if (!Number.isFinite(tempF)) return "";
+    if (this._config.units === "metric") return `${Math.round((tempF - 32) * 5 / 9)}°C`;
+    return `${Math.round(tempF)}°F`;
   }
 
   _getWaveHeightFt() {
@@ -1000,20 +1026,45 @@ class TideWiseCard extends HTMLElement {
     return { score: Math.max(0, Math.min(1, score)), movementScore, rising, falling, label: directionLabel, height: current };
   }
 
-  _scoreLabel(score) {
-    if (score >= 0.85) return { text: "&#128293; Elite", cls: "score-elite" };
-    if (score >= 0.70) return { text: "Prime", cls: "score-prime" };
-    if (score >= 0.55) return { text: "Good", cls: "score-good" };
-    if (score >= 0.40) return { text: "Fair", cls: "score-fair" };
-    return { text: "Slow", cls: "score-slow" };
+  _scoreBand(score, previousBand = null) {
+    if (previousBand === "elite" && score >= 0.82) return "elite";
+    if (previousBand === "prime" && score >= 0.67 && score < 0.87) return "prime";
+    if (previousBand === "good" && score >= 0.52 && score < 0.72) return "good";
+    if (previousBand === "fair" && score >= 0.37 && score < 0.57) return "fair";
+    if (score >= 0.87) return "elite";
+    if (score >= 0.72) return "prime";
+    if (score >= 0.57) return "good";
+    if (score >= 0.42) return "fair";
+    return "slow";
+  }
+
+  _scoreLabel(score, previousBand = null) {
+    const band = this._scoreBand(score, previousBand);
+    const labels = {
+      elite: { text: "&#128293; Elite", cls: "score-elite", band },
+      prime: { text: "Prime", cls: "score-prime", band },
+      good: { text: "Good", cls: "score-good", band },
+      fair: { text: "Fair", cls: "score-fair", band },
+      slow: { text: "Slow", cls: "score-slow", band }
+    };
+    return labels[band];
   }
 
   _fishColor(score) {
-    if (score >= 0.85) return [22, 163, 74];
-    if (score >= 0.70) return [37, 99, 235];
-    if (score >= 0.55) return [8, 145, 178];
-    if (score >= 0.40) return [245, 158, 11];
+    const band = this._scoreBand(score);
+    if (band === "elite") return [22, 163, 74];
+    if (band === "prime") return [37, 99, 235];
+    if (band === "good") return [8, 145, 178];
+    if (band === "fair") return [245, 158, 11];
     return [220, 38, 38];
+  }
+
+  _smoothScores(scores) {
+    return scores.map((score, i) => {
+      const prev = scores[Math.max(0, i - 1)];
+      const next = scores[Math.min(scores.length - 1, i + 1)];
+      return prev * 0.25 + score * 0.50 + next * 0.25;
+    });
   }
 
   _buildFishingScores(predictions) {
@@ -1074,11 +1125,22 @@ class TideWiseCard extends HTMLElement {
       if (tMs >= nowMs && tMs <= maxFutureMs && finalScore > bestScore) { bestScore = finalScore; bestIdx = i; }
     }
 
-    const currentScore = scores[currentIdx] || 0;
+    const smoothedScores = this._smoothScores(scores);
+    details.forEach((detail, i) => { detail.score = smoothedScores[i] ?? detail.score; });
+    bestIdx = null;
+    bestScore = -1;
+    details.forEach((detail, i) => {
+      const tMs = detail.time.getTime();
+      if (tMs >= nowMs && tMs <= maxFutureMs && detail.score > bestScore) {
+        bestScore = detail.score;
+        bestIdx = i;
+      }
+    });
+    const currentScore = smoothedScores[currentIdx] || scores[currentIdx] || 0;
     const currentDetail = details[currentIdx];
     const bestWindow = this._buildBestWindow(details, bestIdx);
     const reason = this._buildReason(currentDetail);
-    return { scores, details, currentScore, currentDetail, age, bestWindow, reason };
+    return { scores: smoothedScores, rawScores: scores, details, currentScore, currentDetail, age, bestWindow, reason };
   }
 
   _buildBestWindow(details, bestIdx) {
@@ -1144,8 +1206,17 @@ class TideWiseCard extends HTMLElement {
     const nextHigh = upcoming.find((p) => p.type === "H");
     const chartPredictions = this._rollingPredictions(predictions, now);
     const fish = this._config.show_fishing_score ? this._buildFishingScores(chartPredictions) : null;
-    const scoreInfo = fish ? this._scoreLabel(fish.currentScore) : null;
+    const scoreInfo = fish ? this._scoreLabel(fish.currentScore, this._fishBand) : null;
+    if (scoreInfo) this._fishBand = scoreInfo.band;
     const phaseName = fish ? this._moonPhaseName(fish.age) : "";
+    const waterTempLabel = this._formatWaterTemp(this._getWaterTempF());
+    const weather = this._getWeatherState();
+    const windLabel = this._formatWind(this._getWindSpeedMph(weather), this._getWindBearing(weather));
+    const headerBadges = [
+      waterTempLabel ? `<span class="water-temp-chip">Water ${waterTempLabel}</span>` : "",
+      fish ? `<span class="fish-moon">${phaseName}</span>` : "",
+      fish ? `<span class="fish-score ${scoreInfo.cls}">${scoreInfo.text}</span>` : ""
+    ].filter(Boolean).join("");
     const root = this.shadowRoot.getElementById("root");
 
     root.innerHTML = `
@@ -1159,6 +1230,8 @@ class TideWiseCard extends HTMLElement {
           <div class="current-label">Current Tide</div>
           <div class="current-value">${cur.toFixed(1)}<span class="current-unit"> ${unitLabel}</span></div>
         </div>
+        <div class="condition-spacer"></div>
+        ${windLabel ? `<div class="condition-chip">${windLabel}</div>` : ""}
         <div class="direction-chip">
           <div class="pulse-dot"></div>
           <span>${rising ? "▲ Rising" : "▼ Falling"}</span>
@@ -1167,7 +1240,7 @@ class TideWiseCard extends HTMLElement {
       <div class="chart-section">
         <div class="chart-header">
           <div class="section-label">${this._config.show_fishing_score ? "&#127907; Tide &amp; Fishing" : "Tide Forecast"}</div>
-          ${fish ? `<div class="fish-badge-row"><span class="fish-moon">${phaseName}</span><span class="fish-score ${scoreInfo.cls}">${scoreInfo.text}</span></div>` : ""}
+          ${headerBadges ? `<div class="fish-badge-row">${headerBadges}</div>` : ""}
         </div>
         <div class="chart-wrap"><canvas id="tideCanvas"></canvas></div>
         ${this._xAxisHtml(chartPredictions)}
@@ -1615,6 +1688,7 @@ class TideWiseCardEditor extends HTMLElement {
         .section { display: grid; gap: 10px; }
         .title { font-size: 14px; font-weight: 700; color: var(--primary-text-color, #1f2933); }
         .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+        .wide { grid-column: 1 / -1; }
         label { display: grid; gap: 5px; font-size: 12px; font-weight: 700; color: var(--secondary-text-color, #536471); }
         input, select {
           box-sizing: border-box;
@@ -1662,24 +1736,25 @@ class TideWiseCardEditor extends HTMLElement {
           </div>
           <div class="grid">
             <label>
-              Latitude
+              Fishing/forecast latitude
               <input id="latitude" type="number" step="0.000001" value="${config.latitude ?? ""}" placeholder="33.688">
             </label>
             <label>
-              Longitude
+              Fishing/forecast longitude
               <input id="longitude" type="number" step="0.000001" value="${config.longitude ?? ""}" placeholder="-78.886">
             </label>
           </div>
           <div class="row">
-            <button id="homeLocation" type="button" ${home.lat && home.lon ? "" : "disabled"}>Use Home Assistant location</button>
-            <span class="hint">${home.lat && home.lon ? `Home: ${home.lat.toFixed(4)}, ${home.lon.toFixed(4)}` : "Home Assistant location is not available in zone.home."}</span>
+            <button id="stationLocation" type="button">Use NOAA station location</button>
+            <button id="homeLocation" type="button" ${home.lat && home.lon ? "" : "disabled"}>Use HA home location</button>
+            <span class="hint">For best fishing scores, use coordinates near the tide gauge, beach, inlet, or fishing area. ${home.lat && home.lon ? `HA home: ${home.lat.toFixed(4)}, ${home.lon.toFixed(4)}` : "HA home location is not available in zone.home."}</span>
           </div>
         </div>
 
         <div class="section">
           <div class="title">Card</div>
           <div class="grid">
-            <label>
+            <label class="wide">
               Title
               <input id="title" value="${this._escape(config.title || "")}" placeholder="TideWise">
             </label>
@@ -1765,6 +1840,7 @@ class TideWiseCardEditor extends HTMLElement {
     this.shadowRoot.getElementById("station")?.addEventListener("change", (event) => this._setValue("station", String(event.target.value || "").trim()));
     this.shadowRoot.getElementById("latitude")?.addEventListener("change", (event) => this._setNumber("latitude", event.target.value));
     this.shadowRoot.getElementById("longitude")?.addEventListener("change", (event) => this._setNumber("longitude", event.target.value));
+    this.shadowRoot.getElementById("stationLocation")?.addEventListener("click", () => this._useNoaaStationLocation());
     this.shadowRoot.getElementById("homeLocation")?.addEventListener("click", () => this._useHomeLocation());
     this.shadowRoot.getElementById("title")?.addEventListener("change", (event) => this._setValue("title", event.target.value || "TideWise"));
     this.shadowRoot.getElementById("units")?.addEventListener("change", (event) => this._setValue("units", event.target.value));
