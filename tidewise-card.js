@@ -1,11 +1,11 @@
 /*
- * TideWise Card v0.4.5
- * NOAA tides with optional bite-window fishing quality scoring.
+ * TideWise Card v0.5.0
+ * NOAA and DFO/Canada tides with optional bite-window fishing quality scoring.
  *
  * Legacy alias: custom:cherry-grove-tides-card
  */
 
-const CARD_VERSION = "0.4.5";
+const CARD_VERSION = "0.5.0";
 const CARD_TYPES = ["tidewise-card", "cherry-grove-tides-card"];
 const STATION_PRESETS = [
   { station: "8410140", name: "Eastport, ME", lat: 44.9046, lon: -66.9829 },
@@ -59,6 +59,10 @@ const STATION_PRESETS = [
   { station: "9755371", name: "San Juan, PR", lat: 18.4589, lon: -66.1164 },
   { station: "9751639", name: "Charlotte Amalie, VI", lat: 18.3306, lon: -64.9258 }
 ];
+
+// null = not fetched yet; [] = fetch failed or in-progress; [{...}] = loaded
+// Session-persistent: fetched at most once per page load across all editor instances.
+let _dfoStationCache = null;
 
 const STYLES = `
   :host {
@@ -138,6 +142,7 @@ class TideWiseCard extends HTMLElement {
     this._refreshInterval = null;
     this._clockInterval = null;
     this._chartCanvas = null;
+    this._stationMeta = null;
   }
 
   static getStubConfig() {
@@ -159,10 +164,11 @@ class TideWiseCard extends HTMLElement {
   set hass(hass) { this._hass = hass; }
 
   setConfig(config) {
-    if (!config.station) throw new Error("TideWise requires a NOAA station ID.");
+    if (!config.station) throw new Error("TideWise requires a station ID.");
     this._config = {
       title: config.title || "TideWise",
       station: String(config.station),
+      provider: this._resolveProvider(config),
       units: config.units || "english",
       weather_entity: config.weather_entity || "",
       water_temp_entity: config.water_temp_entity || "",
@@ -183,8 +189,17 @@ class TideWiseCard extends HTMLElement {
       auto_surf_forecast: config.auto_surf_forecast !== false,
       nws_office: String(config.nws_office || "").trim().toUpperCase()
     };
+    this._stationMeta = null;
+    if (this._config.provider === "dfo") this._fetchDfoStationMeta();
     this._render();
     this._fetchData();
+  }
+
+  _resolveProvider(config) {
+    if (config.provider === "dfo") return "dfo";
+    if (config.provider === "noaa") return "noaa";
+    if (/^[0-9a-f]{24}$/i.test(String(config.station || ""))) return "dfo";
+    return "noaa";
   }
 
   connectedCallback() {
@@ -198,6 +213,11 @@ class TideWiseCard extends HTMLElement {
   }
 
   async _fetchData() {
+    if (this._config.provider === "dfo") return this._fetchDfoData();
+    return this._fetchNoaaData();
+  }
+
+  async _fetchNoaaData() {
     const { station, units } = this._config;
     const today = this._dateStr(0);
     const tomorrow = this._dateStr(1);
@@ -225,12 +245,110 @@ class TideWiseCard extends HTMLElement {
     }
   }
 
+  async _fetchDfoData() {
+    const { station, units } = this._config;
+    const base = "https://api-iwls.dfo-mpo.gc.ca/api/v1";
+    const from = this._dfoDateStr(0);
+    const to = this._dfoDateStr(2);
+    try {
+      const autoPromise = this._config.auto_sources
+        ? this._fetchDfoAutoSources().catch((err) => ({ error: err.message }))
+        : Promise.resolve({});
+      const [predRes, hiloRes, autoData] = await Promise.all([
+        fetch(`${base}/stations/${station}/data?time-series-code=wlp&from=${from}&to=${to}&resolution=FIFTEEN_MINUTES`),
+        fetch(`${base}/stations/${station}/data?time-series-code=wlp-hilo&from=${from}&to=${to}`),
+        autoPromise
+      ]);
+      if (!predRes.ok) throw new Error(this._friendlyDfoError(predRes.status, station));
+      if (!hiloRes.ok) throw new Error(this._friendlyDfoError(hiloRes.status, station));
+      const toFeet = units === "english";
+      const hilo = this._normalizeDfoHilo(await hiloRes.json(), toFeet);
+      let predictions = this._normalizeDfoPredictions(await predRes.json(), toFeet);
+      if (!predictions.length && hilo.length >= 2) predictions = this._buildPredictionsFromHilo(hilo);
+      if (!predictions.length) throw new Error("DFO did not return tide predictions for this station. Verify the station has 'wlp' in its timeSeries.");
+      this._data = { predictions, hilo, intervalFallback: false };
+      this._autoData = autoData || {};
+      this._renderData();
+    } catch (err) {
+      this._renderError(err.message);
+    }
+  }
+
   _friendlyNoaaError(message) {
     const raw = String(message || "").trim();
     if (raw.toLowerCase().includes("no predictions data")) {
       return "NOAA did not return tide predictions for this station. Try a nearby NOAA tide station or a known preset.";
     }
     return raw || "NOAA error";
+  }
+
+  _friendlyDfoError(httpStatus, station) {
+    if (httpStatus === 404) return `DFO station not found. Check the station UUID or choose a preset.`;
+    if (httpStatus === 429) return "DFO API rate limit reached. The card will retry in 15 minutes.";
+    return `DFO API error (HTTP ${httpStatus}). Check your station ID.`;
+  }
+
+  _dfoDateStr(offsetDays = 0) {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    d.setUTCDate(d.getUTCDate() + offsetDays);
+    return d.toISOString();
+  }
+
+  _normalizeDfoPredictions(rawArray, toFeet) {
+    if (!Array.isArray(rawArray)) return [];
+    return rawArray
+      .filter((item) => item && item.eventDate && item.value !== undefined)
+      .map((item) => {
+        const date = new Date(item.eventDate);
+        const m = toFeet ? item.value * 3.28084 : item.value;
+        return { t: this._formatNoaaTime(date), v: m.toFixed(3) };
+      })
+      .filter((item) => !item.t.includes("NaN"));
+  }
+
+  _normalizeDfoHilo(rawArray, toFeet) {
+    if (!Array.isArray(rawArray) || rawArray.length === 0) return [];
+    const sorted = rawArray
+      .filter((item) => item && item.eventDate && item.value !== undefined)
+      .sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate));
+    return sorted.map((item, i) => {
+      const date = new Date(item.eventDate);
+      const m = toFeet ? item.value * 3.28084 : item.value;
+      const neighbor = sorted[i + 1] ?? sorted[i - 1];
+      const isHigh = neighbor ? item.value > neighbor.value : true;
+      return { t: this._formatNoaaTime(date), v: m.toFixed(3), type: isHigh ? "H" : "L" };
+    });
+  }
+
+  async _fetchDfoAutoSources() {
+    // ECCC (Environment Canada) weather API planned as a future enhancement.
+    return {};
+  }
+
+  async _fetchDfoStationMeta() {
+    const { station } = this._config;
+    const cached = (_dfoStationCache || []).find((p) => p.station === station);
+    if (cached) {
+      this._stationMeta = { code: cached.code, name: cached.name };
+      return;
+    }
+    try {
+      const res = await fetch(`https://api-iwls.dfo-mpo.gc.ca/api/v1/stations/${station}`);
+      if (!res.ok) { this._stationMeta = { code: station, name: "" }; return; }
+      const json = await res.json();
+      this._stationMeta = { code: json.code || station, name: json.officialName || "" };
+    } catch {
+      this._stationMeta = { code: station, name: "" };
+    }
+  }
+
+  _subtitleLabel() {
+    if (this._config.provider === "dfo") {
+      const code = this._stationMeta?.code || this._config.station;
+      return `CHS ${code}`;
+    }
+    return `NOAA ${this._config.station}`;
   }
 
   _buildPredictionsFromHilo(hilo) {
@@ -970,7 +1088,7 @@ class TideWiseCard extends HTMLElement {
     else if (detail.light.score < 0.30) parts.push("poor light window");
     if (detail.solunar >= 0.70) parts.push("moon window");
     if (detail.pressure.score >= 0.72) parts.push(detail.pressure.label);
-    if (this._config.auto_sources && (this._autoData?.coops || this._autoData?.nws)) parts.push("NOAA/NWS inputs");
+    if (this._config.auto_sources && this._config.provider !== "dfo" && (this._autoData?.coops || this._autoData?.nws)) parts.push("NOAA/NWS inputs");
     if (!parts.length) parts.push("mixed but fishable");
     return parts.slice(0, 3).join(" + ");
   }
@@ -1005,7 +1123,7 @@ class TideWiseCard extends HTMLElement {
     root.innerHTML = `
       <div class="header">
         <div class="title">${this._config.title}</div>
-        <div class="subtitle">NOAA ${this._config.station}</div>
+        <div class="subtitle">${this._subtitleLabel()}</div>
       </div>
       <div class="current-row">
         <div class="current-icon">&#127754;</div>
@@ -1290,17 +1408,22 @@ class TideWiseCardEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const wasNull = !this._hass;
     this._hass = hass;
     const home = this._homeLatLon();
-    if (this._config && this._config.latitude === undefined && home.lat) this._config.latitude = home.lat;
-    if (this._config && this._config.longitude === undefined && home.lon) this._config.longitude = home.lon;
-    this._render();
+    let needsRender = wasNull;
+    if (this._config) {
+      if (this._config.latitude === undefined && home.lat) { this._config.latitude = home.lat; needsRender = true; }
+      if (this._config.longitude === undefined && home.lon) { this._config.longitude = home.lon; needsRender = true; }
+    }
+    if (needsRender) this._render();
   }
 
   setConfig(config) {
     this._config = {
       title: "TideWise",
       station: "8661070",
+      provider: "noaa",
       units: "english",
       mode: "general",
       show_fishing_score: true,
@@ -1323,12 +1446,36 @@ class TideWiseCardEditor extends HTMLElement {
   }
 
   _presetForStation(station) {
-    return STATION_PRESETS.find((item) => item.station === String(station));
+    return STATION_PRESETS.find((item) => item.station === String(station))
+      || (_dfoStationCache || []).find((item) => item.station === String(station));
   }
 
   _isGeneratedTitle(title) {
     const value = String(title || "").trim();
-    return value === "" || value === "TideWise" || STATION_PRESETS.some((item) => value === `${item.name} Tides`);
+    return value === "" || value === "TideWise"
+      || STATION_PRESETS.some((item) => value === `${item.name} Tides`)
+      || (_dfoStationCache || []).some((item) => value === `${item.name} Tides`);
+  }
+
+  async _loadDfoStations() {
+    if (_dfoStationCache !== null) return;
+    _dfoStationCache = [];
+    try {
+      const res = await fetch("https://api-iwls.dfo-mpo.gc.ca/api/v1/stations");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const all = await res.json();
+      _dfoStationCache = all
+        .filter((s) => {
+          if (s.type === "DISCONTINUED" || s.type === "VIRTUAL" || s.type === "UNKNOWN") return false;
+          const codes = (s.timeSeries || []).map((ts) => ts.code);
+          return codes.includes("wlp") && codes.includes("wlp-hilo");
+        })
+        .map((s) => ({ station: s.id, code: s.code, name: s.officialName, lat: s.latitude, lon: s.longitude }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+      _dfoStationCache = [];
+    }
+    this._render();
   }
 
   _emitConfig(nextConfig) {
@@ -1380,12 +1527,55 @@ class TideWiseCardEditor extends HTMLElement {
     this._emitConfig({ ...this._config, latitude: home.lat, longitude: home.lon });
   }
 
+  _renderStationSection(config) {
+    const isDfo = config.provider === "dfo";
+    if (!isDfo) {
+      const selectedPreset = STATION_PRESETS.find((p) => p.station === String(config.station)) ? String(config.station) : "custom";
+      return `
+        <label>
+          NOAA tide station
+          <select id="stationPreset">
+            ${STATION_PRESETS.map((item) => `<option value="${item.station}" ${selectedPreset === item.station ? "selected" : ""}>${item.name} (${item.station})</option>`).join("")}
+            <option value="custom" ${selectedPreset === "custom" ? "selected" : ""}>Custom station ID</option>
+          </select>
+        </label>
+        <label>
+          Custom NOAA station ID
+          <input id="station" value="${this._escape(config.station || "")}" placeholder="8661070">
+        </label>`;
+    }
+    const cache = _dfoStationCache;
+    const selectedDfo = (cache || []).find((p) => p.station === String(config.station)) ? String(config.station) : "custom";
+    let dfoSelect;
+    if (cache === null) {
+      dfoSelect = `<select id="dfoStationPreset" disabled><option>Loading Canadian stations…</option></select>`;
+    } else if (cache.length === 0) {
+      dfoSelect = `<select id="dfoStationPreset" disabled><option>Could not load — enter UUID manually</option></select>`;
+    } else {
+      dfoSelect = `<select id="dfoStationPreset">
+        ${cache.map((item) => `<option value="${item.station}" ${selectedDfo === item.station ? "selected" : ""}>${this._escape(item.name)} (${item.code})</option>`).join("")}
+        <option value="custom" ${selectedDfo === "custom" ? "selected" : ""}>Custom station UUID</option>
+      </select>`;
+    }
+    return `
+      <label>
+        DFO / CHS tide station
+        ${dfoSelect}
+      </label>
+      <label>
+        Custom DFO station UUID
+        <input id="station" value="${this._escape(config.station || "")}" placeholder="24-character hex UUID">
+        <span style="font-size:11px;color:var(--secondary-text-color,#536471)">Find UUIDs at api-iwls.dfo-mpo.gc.ca/api/v1/stations</span>
+      </label>`;
+  }
+
   _render() {
     if (!this.shadowRoot) return;
     const config = this._config || {};
-    const selectedPreset = this._presetForStation(config.station) ? String(config.station) : "custom";
+    const isDfo = config.provider === "dfo";
     const home = this._homeLatLon();
     const grid = config.grid_options || {};
+    if (isDfo && _dfoStationCache === null) this._loadDfoStations();
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -1425,22 +1615,22 @@ class TideWiseCardEditor extends HTMLElement {
         .check { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--primary-text-color, #1f2933); }
         .check input { width: auto; min-height: auto; }
         .hint { font-size: 12px; line-height: 1.35; color: var(--secondary-text-color, #536471); }
+        .check-disabled { opacity: 0.5; }
       </style>
       <div class="wrap">
         <div class="section">
           <div class="title">Location</div>
           <div class="grid">
             <label>
-              NOAA tide station
-              <select id="stationPreset">
-                ${STATION_PRESETS.map((item) => `<option value="${item.station}" ${selectedPreset === item.station ? "selected" : ""}>${item.name} (${item.station})</option>`).join("")}
-                <option value="custom" ${selectedPreset === "custom" ? "selected" : ""}>Custom station ID</option>
+              Data provider
+              <select id="provider">
+                <option value="noaa" ${!isDfo ? "selected" : ""}>NOAA (US)</option>
+                <option value="dfo" ${isDfo ? "selected" : ""}>DFO / CHS (Canada)</option>
               </select>
             </label>
-            <label>
-              Custom NOAA station ID
-              <input id="station" value="${this._escape(config.station || "")}" placeholder="8661070">
-            </label>
+          </div>
+          <div class="grid">
+            ${this._renderStationSection(config)}
           </div>
           <div class="grid">
             <label>
@@ -1483,13 +1673,13 @@ class TideWiseCardEditor extends HTMLElement {
             <input id="showFishing" type="checkbox" ${config.show_fishing_score !== false ? "checked" : ""}>
             Show fishing score
           </label>
-          <label class="check">
-            <input id="autoSources" type="checkbox" ${config.auto_sources !== false ? "checked" : ""}>
-            Fetch NOAA/NWS auto sources
+          <label class="check${isDfo ? " check-disabled" : ""}">
+            <input id="autoSources" type="checkbox" ${config.auto_sources !== false ? "checked" : ""} ${isDfo ? "disabled" : ""}>
+            ${isDfo ? "Fetch auto sources (NOAA/NWS unavailable for Canada)" : "Fetch NOAA/NWS auto sources"}
           </label>
-          <label class="check">
-            <input id="autoSurfForecast" type="checkbox" ${config.auto_surf_forecast !== false ? "checked" : ""}>
-            Try NWS surf/rip forecast
+          <label class="check${isDfo ? " check-disabled" : ""}">
+            <input id="autoSurfForecast" type="checkbox" ${config.auto_surf_forecast !== false ? "checked" : ""} ${isDfo ? "disabled" : ""}>
+            ${isDfo ? "NWS surf/rip forecast (US only)" : "Try NWS surf/rip forecast"}
           </label>
         </div>
 
@@ -1513,7 +1703,30 @@ class TideWiseCardEditor extends HTMLElement {
       </div>
     `;
 
+    this.shadowRoot.getElementById("provider")?.addEventListener("change", (event) => {
+      const next = { ...this._config, provider: event.target.value };
+      if (event.target.value === "dfo") {
+        const first = (_dfoStationCache || [])[0];
+        if (first) {
+          next.station = first.station;
+          next.latitude = first.lat;
+          next.longitude = first.lon;
+          if (this._isGeneratedTitle(next.title)) next.title = `${first.name} Tides`;
+        }
+        if (_dfoStationCache === null) this._loadDfoStations();
+      } else {
+        next.station = STATION_PRESETS[0].station;
+        next.latitude = STATION_PRESETS[0].lat;
+        next.longitude = STATION_PRESETS[0].lon;
+        if (this._isGeneratedTitle(next.title)) next.title = `${STATION_PRESETS[0].name} Tides`;
+      }
+      this._emitConfig(next);
+    });
     this.shadowRoot.getElementById("stationPreset")?.addEventListener("change", (event) => {
+      const value = event.target.value;
+      if (value !== "custom") this._applyStation(value);
+    });
+    this.shadowRoot.getElementById("dfoStationPreset")?.addEventListener("change", (event) => {
       const value = event.target.value;
       if (value !== "custom") this._applyStation(value);
     });
@@ -1552,7 +1765,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "tidewise-card",
   name: "TideWise",
-  description: "NOAA tides with optional bite-window fishing quality scoring",
+  description: "NOAA and DFO/Canada tides with optional bite-window fishing quality scoring",
   preview: true
 });
 
@@ -1561,4 +1774,4 @@ console.info(
   "background:#0d3a5c;color:#7ecbca;font-weight:bold;padding:2px 4px;border-radius:3px 0 0 3px",
   "background:#7ecbca;color:#0d3a5c;font-weight:bold;padding:2px 4px;border-radius:0 3px 3px 0"
 );
-console.info(`TideWise v${CARD_VERSION} loaded`);
+console.info(`TideWise v${CARD_VERSION} loaded (NOAA + DFO/Canada)`);
