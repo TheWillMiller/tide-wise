@@ -1,0 +1,14 @@
+type: custom:tidewise-card
+title: Adriatic Tides
+provider: generic_entity
+tide_entity: sensor.adriatic_tide_predictions
+units: metric
+tide_time_mode: as_is
+time_offset_minutes: 0
+height_offset: 0
+mode: general
+auto_sources: false
+auto_surf_forecast: false
+grid_options:
+  rows: full
+  columns: 18

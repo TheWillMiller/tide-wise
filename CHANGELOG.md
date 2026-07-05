@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added an international beta provider (`provider: generic_entity`) that reads high/low tide predictions from compatible Home Assistant sensor attributes.
+- Added visual editor controls for generic tide entities, entity time handling, named tide timezones, and manual time/height offsets.
+- Added international entity examples, including a Home Assistant template sensor shape for users adapting regional tide sources.
+- Added an international provider roadmap covering Australia, France, Spain, the Mediterranean, and the Adriatic.
+- Added regression tests for generic tide entity parsing, European day-first dates, array/object prediction rows, unit conversion, UTC handling, and invalid date rejection.
+
+### Changed
+
+- Switched the repository license to MIT so GitHub/HACS can identify the license with standard SPDX metadata.
+- Updated README, examples, and beta guidance for France, Spain, Australia, the Mediterranean, and Adriatic users who can provide tide predictions through a Home Assistant sensor.
+- Updated the frontend check workflow to run the new generic entity regression tests.
+
 ## 0.9.5
 
 ### Fixed

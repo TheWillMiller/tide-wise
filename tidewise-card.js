@@ -10,7 +10,8 @@ const CARD_TYPES = ["tidewise-card", "cherry-grove-tides-card"];
 const TIDEWISE_PROVIDERS = {
   noaa_coops: { label: "US NOAA CO-OPS", stationLabel: "NOAA" },
   chs_iwls: { label: "Canada CHS / DFO", stationLabel: "CHS" },
-  ukho_entity: { label: "UK UKHO Tides integration", stationLabel: "UKHO" }
+  ukho_entity: { label: "UK UKHO Tides integration", stationLabel: "UKHO" },
+  generic_entity: { label: "Home Assistant tide entity", stationLabel: "HA" }
 };
 const CANADA_REGIONS = [
   { code: "atlantic", name: "Atlantic Canada", bbox: [-68.5, 42.0, -52.0, 60.5] },
@@ -337,6 +338,9 @@ class TideWiseCard extends HTMLElement {
       title: "TideWise",
       provider: "noaa_coops",
       station: "8661070",
+      tide_entity: "",
+      tide_time_mode: "as_is",
+      tide_time_zone: "",
       ukho_entity: "",
       ukho_time_mode: "uk_local",
       time_offset_minutes: 0,
@@ -366,6 +370,10 @@ class TideWiseCard extends HTMLElement {
       this._waitingForHassState = false;
       this._fetchData();
     }
+    if (this._waitingForHassState && this._config?.provider === "generic_entity") {
+      this._waitingForHassState = false;
+      this._fetchData();
+    }
   }
 
   setConfig(config) {
@@ -376,6 +384,9 @@ class TideWiseCard extends HTMLElement {
       title: config.title || "TideWise",
       provider,
       station: String(config.station || "8661070"),
+      tide_entity: String(config.tide_entity || ""),
+      tide_time_mode: this._normalizeTideTimeMode(config.tide_time_mode),
+      tide_time_zone: String(config.tide_time_zone || "").trim(),
       ca_region: String(config.ca_region || "atlantic"),
       ca_station: String(config.ca_station || ""),
       ca_station_code: String(config.ca_station_code || ""),
@@ -412,7 +423,7 @@ class TideWiseCard extends HTMLElement {
       debug: this._normalizeDebugConfig(config.debug)
     };
     this.setAttribute("theme-mode", this._config.theme_mode);
-    if (previousConfig.provider !== this._config.provider || previousConfig.station !== this._config.station || previousConfig.ca_station !== this._config.ca_station || previousConfig.ca_series_code !== this._config.ca_series_code || previousConfig.ukho_entity !== this._config.ukho_entity || previousConfig.ukho_time_mode !== this._config.ukho_time_mode || previousConfig.time_offset_minutes !== this._config.time_offset_minutes || previousConfig.height_offset !== this._config.height_offset || previousConfig.beach_area !== this._config.beach_area || previousConfig.surf_zone !== this._config.surf_zone || previousConfig.mode !== this._config.mode) this._fishBand = null;
+    if (previousConfig.provider !== this._config.provider || previousConfig.station !== this._config.station || previousConfig.ca_station !== this._config.ca_station || previousConfig.ca_series_code !== this._config.ca_series_code || previousConfig.ukho_entity !== this._config.ukho_entity || previousConfig.ukho_time_mode !== this._config.ukho_time_mode || previousConfig.tide_entity !== this._config.tide_entity || previousConfig.tide_time_mode !== this._config.tide_time_mode || previousConfig.tide_time_zone !== this._config.tide_time_zone || previousConfig.time_offset_minutes !== this._config.time_offset_minutes || previousConfig.height_offset !== this._config.height_offset || previousConfig.beach_area !== this._config.beach_area || previousConfig.surf_zone !== this._config.surf_zone || previousConfig.mode !== this._config.mode) this._fishBand = null;
     this._render();
     this._fetchData();
   }
@@ -421,6 +432,8 @@ class TideWiseCard extends HTMLElement {
     if (value === "chs_iwls") return "chs_iwls";
     if (value === "ukho_entity") return "ukho_entity";
     if (value === "ukho") return "ukho_entity";
+    if (value === "generic_entity") return "generic_entity";
+    if (value === "ha_entity") return "generic_entity";
     return "noaa_coops";
   }
 
@@ -436,6 +449,11 @@ class TideWiseCard extends HTMLElement {
   _normalizeUkhoTimeMode(value) {
     const mode = String(value || "uk_local").toLowerCase();
     return mode === "as_is" ? "as_is" : "uk_local";
+  }
+
+  _normalizeTideTimeMode(value) {
+    const mode = String(value || "as_is").toLowerCase();
+    return ["as_is", "utc", "time_zone"].includes(mode) ? mode : "as_is";
   }
 
   _normalizeDebugConfig(value) {
@@ -464,6 +482,10 @@ class TideWiseCard extends HTMLElement {
     }
     if (this._config.provider === "ukho_entity") {
       this._fetchUkEntityData();
+      return;
+    }
+    if (this._config.provider === "generic_entity") {
+      this._fetchGenericEntityData();
       return;
     }
     const { station, units } = this._config;
@@ -527,6 +549,172 @@ class TideWiseCard extends HTMLElement {
     this._data = { predictions, hilo, intervalFallback: true, provider: "ukho_entity", timeZone: "Europe/London" };
     this._autoData = {};
     this._renderData();
+  }
+
+  _fetchGenericEntityData() {
+    const entityId = String(this._config.tide_entity || "").trim();
+    if (!entityId) {
+      this._renderError("Choose a Home Assistant tide entity. The entity should expose tide predictions in an attribute such as predictions, tide_predictions, or events.");
+      return;
+    }
+    if (!this._hass?.states) {
+      this._waitingForHassState = true;
+      this._renderError("Waiting for Home Assistant state data before loading the tide entity.");
+      return;
+    }
+    const entity = this._getEntity(entityId);
+    if (!entity) {
+      this._renderError(`Tide entity not found: ${entityId}`);
+      return;
+    }
+    if (["unknown", "unavailable"].includes(String(entity.state || "").toLowerCase())) {
+      this._renderError(`Tide entity is ${entity.state}. Check the Home Assistant integration that creates it.`);
+      return;
+    }
+
+    const hilo = this._buildGenericEntityHilo(entity);
+    if (hilo.length < 2) {
+      this._renderError("Tide entity does not expose enough high/low prediction data. Expected at least two events with time and height values.");
+      return;
+    }
+    const predictions = this._buildPredictionsFromHilo(hilo);
+    if (predictions.length < 4) {
+      this._renderError("Tide entity has events, but TideWise could not build a usable tide curve.");
+      return;
+    }
+    this._data = { predictions, hilo, intervalFallback: true, provider: "generic_entity", timeZone: this._config.tide_time_zone || "entity/browser" };
+    this._autoData = {};
+    this._renderData();
+  }
+
+  _buildGenericEntityHilo(entity) {
+    const rows = this._tideEntityRows(entity);
+    const events = rows
+      .map((row) => {
+        const timeRaw = Array.isArray(row)
+          ? row[0]
+          : row?.DateTime || row?.dateTime || row?.eventDate || row?.datetime || row?.timestamp || row?.time || row?.time_local || row?.timeLocal || row?.time_utc || row?.timeUtc || row?.date;
+        const heightRaw = Array.isArray(row)
+          ? row[1]
+          : row?.Height ?? row?.height ?? row?.height_m ?? row?.heightM ?? row?.heightMeters ?? row?.height_metres ?? row?.heightMetres ?? row?.value ?? row?.level ?? row?.water_level ?? row?.waterLevel ?? row?.prediction;
+        const explicitType = Array.isArray(row)
+          ? row[2]
+          : row?.type ?? row?.eventType ?? row?.tideType ?? row?.tide_type ?? row?.tide ?? row?.name ?? row?.state;
+        const time = this._applyTimeOffset(this._parseGenericEntityTime(timeRaw));
+        const metres = this._parseNumericState(heightRaw);
+        const value = (this._config.units === "metric" ? metres : metres * 3.28084) + this._heightOffset();
+        return { time, value, type: this._normalizeHiloType(explicitType) };
+      })
+      .filter((item) => Number.isFinite(item.time.getTime()) && Number.isFinite(item.value))
+      .sort((a, b) => a.time - b.time);
+
+    if (events.length < 2) return [];
+    return this._inferHiloTypes(events).map((event) => ({
+      t: this._formatNoaaTime(event.time),
+      v: event.value.toFixed(3),
+      type: event.type
+    }));
+  }
+
+  _tideEntityRows(entity) {
+    const attrs = entity?.attributes || {};
+    const candidates = [
+      attrs.predictions,
+      attrs.tide_predictions,
+      attrs.tidePredictions,
+      attrs.events,
+      attrs.extremes,
+      attrs.high_low,
+      attrs.highLow
+    ];
+    return candidates.find(Array.isArray) || [];
+  }
+
+  _parseGenericEntityTime(value) {
+    if (value instanceof Date) return new Date(value);
+    const raw = String(value || "").trim();
+    if (!raw) return new Date(NaN);
+    const localParts = this._parseGenericLocalDateTime(raw);
+    if (localParts && (this._config.tide_time_mode === "as_is" || this._config.tide_time_mode === "time_zone")) {
+      return new Date(localParts.year, localParts.month - 1, localParts.day, localParts.hour, localParts.minute, localParts.second);
+    }
+    if (localParts && this._config.tide_time_mode === "utc") {
+      return new Date(Date.UTC(localParts.year, localParts.month - 1, localParts.day, localParts.hour, localParts.minute, localParts.second));
+    }
+    const isoLike = raw.includes("T") ? raw : raw.replace(" ", "T");
+    const hasZone = /(?:z|[+-]\d{2}:?\d{2})$/i.test(raw);
+    if (this._config.tide_time_mode === "utc" && !hasZone) {
+      return new Date(`${isoLike}Z`);
+    }
+    const instant = new Date(hasZone ? isoLike : raw);
+    if (!Number.isFinite(instant.getTime())) return new Date(raw);
+    if (this._config.tide_time_mode === "time_zone" && this._config.tide_time_zone) {
+      try {
+        return this._dateInTimeZone(instant, this._config.tide_time_zone);
+      } catch (err) {
+        return instant;
+      }
+    }
+    return instant;
+  }
+
+  _parseGenericLocalDateTime(value) {
+    const raw = String(value || "").trim();
+    const iso = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (iso) {
+      return this._validLocalDateTimeParts({
+        year: Number(iso[1]),
+        month: Number(iso[2]),
+        day: Number(iso[3]),
+        hour: Number(iso[4]),
+        minute: Number(iso[5]),
+        second: Number(iso[6] || 0)
+      });
+    }
+    const dayFirst = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (dayFirst) {
+      return this._validLocalDateTimeParts({
+        year: Number(dayFirst[3]),
+        month: Number(dayFirst[2]),
+        day: Number(dayFirst[1]),
+        hour: Number(dayFirst[4]),
+        minute: Number(dayFirst[5]),
+        second: Number(dayFirst[6] || 0)
+      });
+    }
+    return null;
+  }
+
+  _validLocalDateTimeParts(parts) {
+    const { year, month, day, hour, minute, second } = parts || {};
+    if (![year, month, day, hour, minute, second].every(Number.isFinite)) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
+    const check = new Date(year, month - 1, day, hour, minute, second);
+    if (check.getFullYear() !== year || check.getMonth() !== month - 1 || check.getDate() !== day) return null;
+    return parts;
+  }
+
+  _normalizeHiloType(value) {
+    const raw = String(value || "").toLowerCase();
+    if (/\b(high|hi|h|pleamar|alta|haute|hoogwater|hw)\b/.test(raw)) return "H";
+    if (/\b(low|lo|l|bajamar|basse|laagwater|lw)\b/.test(raw)) return "L";
+    return "";
+  }
+
+  _inferHiloTypes(events) {
+    return events.map((event, index) => {
+      if (event.type) return event;
+      const prev = events[index - 1];
+      const next = events[index + 1];
+      let type = "";
+      if (prev && next) {
+        if (event.value >= prev.value && event.value > next.value) type = "H";
+        if (event.value <= prev.value && event.value < next.value) type = "L";
+      }
+      if (!type && next) type = event.value > next.value ? "H" : "L";
+      if (!type && prev) type = event.value > prev.value ? "H" : "L";
+      return { ...event, type: type || (index % 2 === 0 ? "H" : "L") };
+    });
   }
 
   _buildUkhoEntityHilo(entity) {
@@ -1848,7 +2036,9 @@ class TideWiseCard extends HTMLElement {
       ? (this._config.ca_station_code || "Canada")
       : this._config.provider === "ukho_entity"
         ? this._ukhoEntityDisplayName()
-        : this._config.station;
+        : this._config.provider === "generic_entity"
+          ? this._tideEntityDisplayName()
+          : this._config.station;
     const headerBadges = [
       waterTempLabel ? `<span class="water-temp-chip">Water ${waterTempLabel}</span>` : "",
       fish ? `<span class="fish-moon">${phaseName}</span>` : "",
@@ -2066,12 +2256,18 @@ class TideWiseCard extends HTMLElement {
   _debugStationLabel() {
     if (this._config.provider === "chs_iwls") return `${this._config.ca_station_code || ""} ${this._config.ca_station}`.trim();
     if (this._config.provider === "ukho_entity") return this._config.ukho_entity || "missing";
+    if (this._config.provider === "generic_entity") return this._config.tide_entity || "missing";
     return this._config.station;
   }
 
   _ukhoEntityDisplayName() {
     const entity = this._getEntity(this._config.ukho_entity);
     return String(entity?.attributes?.friendly_name || this._config.ukho_entity || "entity").replace(/\s+Tides?$/i, "");
+  }
+
+  _tideEntityDisplayName() {
+    const entity = this._getEntity(this._config.tide_entity);
+    return String(entity?.attributes?.friendly_name || this._config.tide_entity || "entity").replace(/\s+Tides?$/i, "");
   }
 
   _capitalize(text) {
@@ -2417,6 +2613,9 @@ class TideWiseCardEditor extends HTMLElement {
       title: "TideWise",
       provider: "noaa_coops",
       station: "8661070",
+      tide_entity: "",
+      tide_time_mode: "as_is",
+      tide_time_zone: "",
       ca_region: "atlantic",
       ca_station: "",
       ca_station_code: "",
@@ -2444,6 +2643,7 @@ class TideWiseCardEditor extends HTMLElement {
     this._config.theme_mode = this._normalizeThemeMode(this._config.theme_mode);
     this._config.wind_units = this._normalizeWindUnits(this._config.wind_units);
     this._config.ukho_time_mode = this._normalizeUkhoTimeMode(this._config.ukho_time_mode);
+    this._config.tide_time_mode = this._normalizeTideTimeMode(this._config.tide_time_mode);
     this._applyDefaultForecastPoint();
     this._syncMapCenterToConfig(this._config);
     this._render();
@@ -2672,10 +2872,17 @@ class TideWiseCardEditor extends HTMLElement {
     return mode === "as_is" ? "as_is" : "uk_local";
   }
 
+  _normalizeTideTimeMode(value) {
+    const mode = String(value || "as_is").toLowerCase();
+    return ["as_is", "utc", "time_zone"].includes(mode) ? mode : "as_is";
+  }
+
   _normalizeProvider(value) {
     if (value === "chs_iwls") return "chs_iwls";
     if (value === "ukho_entity") return "ukho_entity";
     if (value === "ukho") return "ukho_entity";
+    if (value === "generic_entity") return "generic_entity";
+    if (value === "ha_entity") return "generic_entity";
     return "noaa_coops";
   }
 
@@ -2831,9 +3038,46 @@ class TideWiseCardEditor extends HTMLElement {
       }));
   }
 
+  _tideEntityOptions() {
+    const states = this._hass?.states || {};
+    return Object.keys(states)
+      .filter((entityId) => {
+        const entity = states[entityId];
+        const attrs = entity?.attributes || {};
+        return entityId.startsWith("sensor.") && [
+          attrs.predictions,
+          attrs.tide_predictions,
+          attrs.tidePredictions,
+          attrs.events,
+          attrs.extremes,
+          attrs.high_low,
+          attrs.highLow
+        ].some(Array.isArray);
+      })
+      .sort((a, b) => {
+        const an = String(states[a]?.attributes?.friendly_name || a);
+        const bn = String(states[b]?.attributes?.friendly_name || b);
+        return an.localeCompare(bn);
+      })
+      .map((entityId) => ({
+        entityId,
+        name: String(states[entityId]?.attributes?.friendly_name || entityId)
+      }));
+  }
+
   _applyUkhoEntity(entityId) {
     const next = { ...this._config, provider: "ukho_entity", ukho_entity: String(entityId || "").trim() };
     const entity = this._hass?.states?.[next.ukho_entity];
+    const name = String(entity?.attributes?.friendly_name || "").trim();
+    if (name && this._isGeneratedTitle(next.title)) {
+      next.title = `${name.replace(/\s+Tides?$/i, "")} Tides`;
+    }
+    this._emitConfig(next);
+  }
+
+  _applyTideEntity(entityId) {
+    const next = { ...this._config, provider: "generic_entity", tide_entity: String(entityId || "").trim() };
+    const entity = this._hass?.states?.[next.tide_entity];
     const name = String(entity?.attributes?.friendly_name || "").trim();
     if (name && this._isGeneratedTitle(next.title)) {
       next.title = `${name.replace(/\s+Tides?$/i, "")} Tides`;
@@ -3004,6 +3248,8 @@ class TideWiseCardEditor extends HTMLElement {
     const selectedPreset = this._presetForStation(config.station) ? String(config.station) : "custom";
     const ukhoEntityOptions = this._ukhoEntityOptions();
     const selectedUkhoEntityKnown = ukhoEntityOptions.some((item) => item.entityId === config.ukho_entity);
+    const tideEntityOptions = this._tideEntityOptions();
+    const selectedTideEntityKnown = tideEntityOptions.some((item) => item.entityId === config.tide_entity);
     const grid = config.grid_options || {};
     const canadaRegion = config.ca_region || "atlantic";
     const canadaStations = this._canadaRegionStations(canadaRegion);
@@ -3183,6 +3429,7 @@ class TideWiseCardEditor extends HTMLElement {
                 <option value="noaa_coops" ${provider === "noaa_coops" ? "selected" : ""}>US NOAA CO-OPS</option>
                 <option value="chs_iwls" ${provider === "chs_iwls" ? "selected" : ""}>Canada CHS / DFO</option>
                 <option value="ukho_entity" ${provider === "ukho_entity" ? "selected" : ""}>UK UKHO Tides integration sensor</option>
+                <option value="generic_entity" ${provider === "generic_entity" ? "selected" : ""}>Home Assistant tide entity</option>
               </select>
             </label>
           </div>
@@ -3245,6 +3492,43 @@ class TideWiseCardEditor extends HTMLElement {
           ${ukhoEntityOptions.length ? "" : `<div class="hint"><strong>No UKHO Tides sensors found yet.</strong> Install and configure the UKHO Tides Home Assistant integration first, then reopen this editor or enter the sensor entity ID manually.</div>`}
           <div class="hint"><strong>Required for UK:</strong> TideWise reads a sensor from the separate UKHO Tides Home Assistant integration. Add your UKHO API key and station in that integration first, then choose the created sensor here. The API key stays in Home Assistant instead of browser/dashboard YAML.</div>
           <div class="hint"><strong>UK corrections:</strong> Use UK local time for normal GMT/BST conversion. If the integration already emits local clock times, choose as-is. Use time offset for secondary-station timing corrections and height offset when all tide heights are consistently high or low; height offset uses the selected tide display unit.</div>
+          ` : provider === "generic_entity" ? `
+          <div class="grid">
+            <label class="wide">
+              Tide entity
+              <select id="tideEntitySelect">
+                <option value="">Choose a tide prediction sensor</option>
+                ${!selectedTideEntityKnown && config.tide_entity ? `<option value="${this._escape(config.tide_entity)}" selected>${this._escape(config.tide_entity)}</option>` : ""}
+                ${tideEntityOptions.map((item) => `<option value="${this._escape(item.entityId)}" ${config.tide_entity === item.entityId ? "selected" : ""}>${this._escape(item.name)} (${this._escape(item.entityId)})</option>`).join("")}
+              </select>
+            </label>
+            <label class="wide">
+              Manual tide entity ID
+              <input id="tideEntityManual" value="${this._escape(config.tide_entity || "")}" placeholder="sensor.my_tide_predictions">
+            </label>
+            <label>
+              Entity time handling
+              <select id="tideTimeMode">
+                <option value="as_is" ${config.tide_time_mode === "as_is" ? "selected" : ""}>Use entity times as-is</option>
+                <option value="utc" ${config.tide_time_mode === "utc" ? "selected" : ""}>Treat timezone-less times as UTC</option>
+                <option value="time_zone" ${config.tide_time_mode === "time_zone" ? "selected" : ""}>Convert zoned times to named timezone</option>
+              </select>
+            </label>
+            <label>
+              Tide timezone
+              <input id="tideTimeZone" value="${this._escape(config.tide_time_zone || "")}" placeholder="Europe/Paris">
+            </label>
+            <label>
+              Time offset (minutes)
+              <input id="timeOffsetMinutes" type="number" step="1" value="${config.time_offset_minutes ?? 0}" placeholder="0">
+            </label>
+            <label>
+              Height offset (${tideOffsetUnit})
+              <input id="heightOffset" type="number" step="0.01" value="${config.height_offset ?? 0}" placeholder="0">
+            </label>
+          </div>
+          ${tideEntityOptions.length ? "" : `<div class="hint"><strong>No compatible tide sensors found yet.</strong> Choose a Home Assistant integration or template sensor that exposes prediction rows in a <code>predictions</code>, <code>tide_predictions</code>, <code>events</code>, or <code>extremes</code> attribute.</div>`}
+          <div class="hint"><strong>International beta:</strong> TideWise reads high/low tide events from an existing Home Assistant sensor. This is the recommended first path for France, Spain, Australia, the Mediterranean, and Adriatic locations while direct official providers are evaluated.</div>
           ` : `
           <div class="grid">
             <label>
@@ -3413,6 +3697,13 @@ class TideWiseCardEditor extends HTMLElement {
           if (this._isGeneratedTitle(next.title)) next.title = `${first.name.replace(/\s+Tides?$/i, "")} Tides`;
         }
       }
+      if (nextProvider === "generic_entity") {
+        const first = this._tideEntityOptions()[0];
+        if (!next.tide_entity && first) {
+          next.tide_entity = first.entityId;
+          if (this._isGeneratedTitle(next.title)) next.title = `${first.name.replace(/\s+Tides?$/i, "")} Tides`;
+        }
+      }
       this._emitConfig(next);
     });
     this.shadowRoot.getElementById("caRegion")?.addEventListener("change", (event) => {
@@ -3446,6 +3737,10 @@ class TideWiseCardEditor extends HTMLElement {
     this.shadowRoot.getElementById("ukhoEntitySelect")?.addEventListener("change", (event) => this._applyUkhoEntity(event.target.value));
     this.shadowRoot.getElementById("ukhoEntityManual")?.addEventListener("change", (event) => this._applyUkhoEntity(event.target.value));
     this.shadowRoot.getElementById("ukhoTimeMode")?.addEventListener("change", (event) => this._setValue("ukho_time_mode", this._normalizeUkhoTimeMode(event.target.value)));
+    this.shadowRoot.getElementById("tideEntitySelect")?.addEventListener("change", (event) => this._applyTideEntity(event.target.value));
+    this.shadowRoot.getElementById("tideEntityManual")?.addEventListener("change", (event) => this._applyTideEntity(event.target.value));
+    this.shadowRoot.getElementById("tideTimeMode")?.addEventListener("change", (event) => this._setValue("tide_time_mode", this._normalizeTideTimeMode(event.target.value)));
+    this.shadowRoot.getElementById("tideTimeZone")?.addEventListener("change", (event) => this._setValue("tide_time_zone", String(event.target.value || "").trim()));
     this.shadowRoot.getElementById("timeOffsetMinutes")?.addEventListener("change", (event) => this._setNumber("time_offset_minutes", event.target.value));
     this.shadowRoot.getElementById("heightOffset")?.addEventListener("change", (event) => this._setNumber("height_offset", event.target.value));
     this.shadowRoot.getElementById("latitude")?.addEventListener("change", (event) => this._setNumber("latitude", event.target.value));

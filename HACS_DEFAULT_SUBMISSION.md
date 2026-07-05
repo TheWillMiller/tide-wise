@@ -41,6 +41,7 @@ TheScubadiver/camera-gallery-card
 - `hacs.json` points to `tidewise-card.js`.
 - `tidewise-card.js` exists in the repository root.
 - HACS validation workflow passes with `category: plugin`.
+- GitHub identifies the repository license as MIT, not `NOASSERTION`.
 - Frontend syntax check workflow passes.
 - Latest version is a full GitHub Release, not only a tag.
 - Latest release includes `tidewise-card.js` as an attached asset.
@@ -50,4 +51,4 @@ TheScubadiver/camera-gallery-card
 
 Do not submit TideWise as an integration. It is a plugin/custom card.
 
-Do not change the license silently. TideWise is licensed for free personal/non-commercial use under PolyForm Noncommercial 1.0.0, with commercial use requiring separate written permission.
+TideWise uses the MIT License so GitHub and HACS can identify the repository license through standard SPDX metadata.

@@ -6,12 +6,15 @@
   "files": [
     "tidewise-card.js",
     "README.md",
+    "INTERNATIONAL_PROVIDER_ROADMAP.md",
     "info.md",
     "hacs.json",
-    "examples"
+    "examples",
+    "tests"
   ],
   "scripts": {
-    "check": "node --check tidewise-card.js"
+    "check": "node --check tidewise-card.js",
+    "test": "node tests/generic-entity.test.mjs"
   },
   "keywords": [
     "home-assistant",
@@ -25,6 +28,6 @@
     "fishing",
     "weather"
   ],
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "MIT",
   "private": false
 }

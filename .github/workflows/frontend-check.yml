@@ -21,3 +21,6 @@ jobs:
 
       - name: JavaScript syntax check
         run: node --check tidewise-card.js
+
+      - name: Generic entity regression tests
+        run: npm test

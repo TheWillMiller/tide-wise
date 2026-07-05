@@ -26,10 +26,10 @@ body:
     validations:
       required: false
   - type: input
-    id: station
+    id: source
     attributes:
-      label: NOAA station ID or area
-      placeholder: "8661070 / Cherry Grove, SC"
+      label: Provider, station, entity, or area
+      placeholder: "noaa_coops 8661070 / generic_entity sensor.adriatic_tide_predictions / Adriatic Sea"
     validations:
       required: false
   - type: textarea

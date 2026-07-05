@@ -1,0 +1,21 @@
+# Example Home Assistant template sensor shape for TideWise international beta.
+# Replace the sample rows with values from your local tide source/integration.
+template:
+  - sensor:
+      - name: Adriatic Tide Predictions
+        unique_id: adriatic_tide_predictions
+        state: "{{ now().isoformat() }}"
+        attributes:
+          predictions:
+            - time: "2026-06-12T06:14:00+02:00"
+              height: 0.42
+              type: low
+            - time: "2026-06-12T12:28:00+02:00"
+              height: 0.91
+              type: high
+            - time: "2026-06-12T18:37:00+02:00"
+              height: 0.31
+              type: low
+            - time: "2026-06-13T00:49:00+02:00"
+              height: 0.84
+              type: high

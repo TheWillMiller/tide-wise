@@ -35,13 +35,33 @@ body:
         - Other
     validations:
       required: true
-  - type: input
-    id: station
+  - type: dropdown
+    id: provider
     attributes:
-      label: NOAA station ID
-      placeholder: "8661070"
+      label: Tide provider
+      options:
+        - US NOAA CO-OPS
+        - Canada CHS / DFO
+        - UK UKHO Tides integration sensor
+        - Home Assistant tide entity
+        - Other
     validations:
       required: true
+  - type: input
+    id: source
+    attributes:
+      label: Station, sensor entity, or source
+      placeholder: "8661070 / sensor.portsmouth_tide / sensor.adriatic_tide_predictions"
+    validations:
+      required: true
+  - type: input
+    id: prediction_attribute
+    attributes:
+      label: Prediction attribute name
+      description: For Home Assistant tide entity reports, name the attribute TideWise should read. Leave blank for NOAA/CHS/UKHO.
+      placeholder: predictions / tide_predictions / events / extremes
+    validations:
+      required: false
   - type: input
     id: browser_device
     attributes:
@@ -58,6 +78,7 @@ body:
         - label: The visual editor opened.
         - label: Settings persisted after refresh.
         - label: Tide data loaded.
+        - label: Current height and next high/low rendered.
         - label: Fishing score rendered.
         - label: Something is broken.
   - type: textarea
