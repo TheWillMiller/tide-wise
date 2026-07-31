@@ -1,6 +1,5 @@
 {
   "name": "TideWise",
-  "country": "US",
   "content_in_root": true,
   "render_readme": true,
   "filename": "tidewise-card.js"
