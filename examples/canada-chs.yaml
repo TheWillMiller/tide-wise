@@ -4,6 +4,8 @@ provider: chs_iwls
 ca_region: atlantic
 ca_station: "64b6e5ec8027cb190816a0c0"
 ca_station_code: "01804"
+time_offset_minutes: 0
+height_offset: 0
 units: metric
 mode: general
 auto_sources: false

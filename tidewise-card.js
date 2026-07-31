@@ -1,11 +1,11 @@
 /*
- * TideWise Card v0.9.5
+ * TideWise Card v0.9.7
  * NOAA tides with optional bite-window fishing quality scoring.
  *
  * Legacy alias: custom:cherry-grove-tides-card
  */
 
-const CARD_VERSION = "0.9.6";
+const CARD_VERSION = "0.9.7";
 const CARD_TYPES = ["tidewise-card", "cherry-grove-tides-card"];
 const TIDEWISE_PROVIDERS = {
   noaa_coops: { label: "US NOAA CO-OPS", stationLabel: "NOAA" },
@@ -832,12 +832,15 @@ class TideWiseCard extends HTMLElement {
       return;
     }
     const now = new Date();
-    const from = new Date(now.getTime() - 60 * 60 * 1000);
-    const to = new Date(now.getTime() + 25 * 60 * 60 * 1000);
+    const offsetPadding = Math.abs(Number(this._config.time_offset_minutes) || 0) * 60 * 1000;
+    const from = new Date(now.getTime() - 60 * 60 * 1000 - offsetPadding);
+    const to = new Date(now.getTime() + 25 * 60 * 60 * 1000 + offsetPadding);
     try {
-      if (stationId.startsWith("code:")) {
-        const resolved = await this._fetchCanadaStationByCode(stationId.slice(5));
+      const stationCode = this._canadaStationCodeFromInput(stationId);
+      if (stationCode) {
+        const resolved = await this._fetchCanadaStationByCode(stationCode);
         stationId = resolved.id;
+        if (!this._config.ca_station_code) this._config.ca_station_code = resolved.code;
         if (!this._config.ca_series_code && resolved.seriesCode) this._config.ca_series_code = resolved.seriesCode;
       }
       const loaded = await this._fetchCanadaSeriesRows(stationId, from, to);
@@ -861,8 +864,16 @@ class TideWiseCard extends HTMLElement {
     if (!station?.id) throw new Error(`CHS station ${code} was not found`);
     return {
       id: String(station.id),
+      code: String(station.code || code),
       seriesCode: this._canadaStationSeriesCode(station)
     };
+  }
+
+  _canadaStationCodeFromInput(value) {
+    const raw = String(value || "").trim();
+    const prefixed = raw.match(/^code:(\d+)$/i);
+    if (prefixed) return prefixed[1];
+    return /^\d+$/.test(raw) ? raw : "";
   }
 
   async _fetchCanadaSeriesRows(stationId, from, to) {
@@ -885,12 +896,15 @@ class TideWiseCard extends HTMLElement {
     const url = `https://api-iwls.dfo-mpo.gc.ca/api/v1/stations/${encodeURIComponent(stationId)}/data?time-series-code=${encodeURIComponent(seriesCode)}&from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`CHS returned ${res.status}`);
-    const json = await res.json();
+    return this._normalizeCanadaSeriesRows(await res.json());
+  }
+
+  _normalizeCanadaSeriesRows(json) {
     return this._arrayFromApi(json)
       .map((item) => {
-        const time = new Date(item.eventDate || item.date || item.time);
+        const time = this._applyTimeOffset(new Date(item.eventDate || item.date || item.time));
         const rawValue = Number(item.value);
-        const value = this._config.units === "metric" ? rawValue : rawValue * 3.28084;
+        const value = (this._config.units === "metric" ? rawValue : rawValue * 3.28084) + this._heightOffset();
         return { time, value };
       })
       .filter((item) => Number.isFinite(item.time.getTime()) && Number.isFinite(item.value))
@@ -3449,16 +3463,25 @@ class TideWiseCardEditor extends HTMLElement {
               </select>
             </label>
             <label>
-              Manual CHS station ID
-              <input id="caStationManual" value="${this._escape(config.ca_station || "")}" placeholder="CHS station object ID">
+              Manual CHS station ID or code
+              <input id="caStationManual" value="${this._escape(config.ca_station || "")}" placeholder="07780 or CHS object ID">
             </label>
             <label>
               CHS station code
               <input id="caStationCode" value="${this._escape(config.ca_station_code || "")}" placeholder="Optional display code">
             </label>
+            <label>
+              Time offset (minutes)
+              <input id="timeOffsetMinutes" type="number" step="1" value="${config.time_offset_minutes ?? 0}" placeholder="0">
+            </label>
+            <label>
+              Height offset (${tideOffsetUnit})
+              <input id="heightOffset" type="number" step="0.01" value="${config.height_offset ?? 0}" placeholder="0">
+            </label>
           </div>
           ${this._canadaStationsError ? `<div class="hint">Could not load CHS station list: ${this._escape(this._canadaStationsError)}</div>` : ""}
-          <div class="hint">Canadian support uses CHS/DFO IWLS water-level predictions where available, with water-level forecasts as a fallback for Great Lakes stations. Weather, rip risk, surf, and other fishing inputs still depend on Home Assistant entities.</div>
+          <div class="hint">Canadian support uses CHS/DFO IWLS water-level predictions where available, with water-level forecasts as a fallback for Great Lakes stations. CHS timestamps are converted from UTC to the dashboard device's local time, including daylight-saving rules. Use the optional offsets only when the official station time or height needs a consistent correction.</div>
+          <div class="hint">If a station is missing from the picker, find its numeric code in the <a href="https://www.tides.gc.ca/en/stations" target="_blank" rel="noopener noreferrer">official CHS station directory</a> and enter that code above.</div>
           ` : provider === "ukho_entity" ? `
           <div class="grid">
             <label class="wide">

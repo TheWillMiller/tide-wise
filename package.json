@@ -1,6 +1,6 @@
 {
   "name": "tidewise-card",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "description": "Tide predictions with optional bite-window fishing quality scoring for Home Assistant.",
   "type": "module",
   "files": [
@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "check": "node --check tidewise-card.js",
-    "test": "node tests/generic-entity.test.mjs"
+    "test": "node tests/generic-entity.test.mjs && node tests/canada-chs.test.mjs"
   },
   "keywords": [
     "home-assistant",

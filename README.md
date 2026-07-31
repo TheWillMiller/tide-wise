@@ -9,7 +9,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/TheWillMiller/tide-wise?label=stars)](https://github.com/TheWillMiller/tide-wise/stargazers)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-yellow?logo=buymeacoffee)](https://buymeacoffee.com/thewillmiller)
 
-**Latest release:** `v0.9.6`
+**Latest release:** `v0.9.7`
 
 TideWise is a Home Assistant dashboard (Lovelace) custom card for tide predictions, current tide height, next high/low tides, and optional fishing bite-window scoring. The default provider is NOAA CO-OPS, with early Canada CHS/DFO support, UK support through the UKHO Tides Home Assistant integration, and international beta support through compatible Home Assistant tide sensors.
 
@@ -187,7 +187,7 @@ type: module
 For quick testing before installing locally, you can add this dashboard resource:
 
 ```yaml
-url: https://cdn.jsdelivr.net/gh/TheWillMiller/tide-wise@v0.9.6/tidewise-card.js
+url: https://cdn.jsdelivr.net/gh/TheWillMiller/tide-wise@v0.9.7/tidewise-card.js
 type: module
 ```
 
@@ -265,6 +265,8 @@ provider: chs_iwls
 ca_region: atlantic
 ca_station: "64b6e5ec8027cb190816a0c0"
 ca_station_code: "01804"
+time_offset_minutes: 0
+height_offset: 0
 units: metric
 mode: general
 auto_sources: false
@@ -274,6 +276,8 @@ grid_options:
 ```
 
 Canadian tide predictions can render the tide chart and high/low times. NOAA/NWS auto sources are US-focused, so Canadian fishing inputs such as weather, wind, surf, water temperature, and pressure should come from Home Assistant entities when available.
+
+CHS prediction timestamps are UTC instants. TideWise converts them to the dashboard device's local time, including its daylight-saving rules. If a station needs a consistent secondary-station correction, set `time_offset_minutes` to move every event earlier or later. Use `height_offset` to adjust every displayed height in the selected display unit.
 
 ## UK UKHO Example
 
@@ -493,12 +497,12 @@ The debug panel is collapsed by default and scrolls internally when expanded. It
 | `tide_time_mode` | No | `as_is` | Generic entity time handling. Use `as_is`, `utc`, or `time_zone`. |
 | `tide_time_zone` | No |  | IANA timezone such as `Europe/Paris` or `Australia/Sydney`, used only when `tide_time_mode: time_zone`. |
 | `ca_region` | No | `atlantic` | Canada station picker region: `atlantic`, `great_lakes`, `quebec`, `pacific`, or `arctic`. |
-| `ca_station` | Required for Canada |  | Canadian CHS/DFO IWLS station object ID. Prefer choosing it from the visual editor. |
+| `ca_station` | Required for Canada |  | Canadian CHS/DFO IWLS station object ID or numeric station code. Prefer choosing it from the visual editor. |
 | `ca_station_code` | No |  | Optional Canadian CHS display code. |
 | `ukho_entity` | Required for `ukho_entity` |  | Home Assistant sensor from the UKHO Tides integration. The sensor must expose a `predictions` attribute. |
 | `ukho_time_mode` | No | `uk_local` | UKHO integration-sensor time handling. Use `uk_local` to convert GMT/UTC events to UK local time including BST, or `as_is` when the sensor already exposes local clock times. |
-| `time_offset_minutes` | No | `0` | Manual minute offset applied to UKHO integration-sensor tide events. Useful for secondary-station timing corrections. |
-| `height_offset` | No | `0` | Manual height offset applied to all UKHO integration-sensor tide heights. Uses the selected display unit: metres with `metric`, feet with `english`. |
+| `time_offset_minutes` | No | `0` | Manual minute offset applied to CHS, UKHO, or generic-entity tide events. Useful for secondary-station timing corrections. |
+| `height_offset` | No | `0` | Manual height offset applied to CHS, UKHO, or generic-entity tide heights. Uses the selected display unit: metres with `metric`, feet with `english`. |
 | `units` | No | `english` | Display units. Usually `english` or `metric`. Canadian CHS and UKHO data are metric and are converted to feet when `english` is selected. |
 | `wind_units` | No | `auto` | Wind display units. Use `auto`, `mph`, `kmh`, `knots`, or `beaufort`. `auto` follows the tide unit choice, so metric cards show km/h unless overridden. |
 | `mode` | No | `general` | Fishing score mode: `general`, `surf`, `inlet`, `flounder`, `trout_redfish`, or `sheepshead`. |
@@ -534,6 +538,8 @@ If your station does not work, try a nearby NOAA station that supports tide pred
 ## Finding a Canadian Station
 
 Set **Tide provider** to **Canada CHS / DFO** in the visual editor, choose a Canadian region, then choose a CHS water-level station from the station dropdown. Canadian Great Lakes stations are under **Great Lakes / Ontario**.
+
+If the station is not listed, find its numeric code in the [official CHS station directory](https://www.tides.gc.ca/en/stations) and enter that code in **Manual CHS station ID or code**. TideWise resolves numeric codes to the internal CHS object ID automatically.
 
 Canada support uses CHS/DFO IWLS water-level predictions where available. Some Great Lakes stations publish water-level forecasts instead, so TideWise falls back from `wlp` predictions to `wlf` forecasts when needed. The Great Lakes picker includes a small official CHS seed list because those stations may not appear in the CHS bulk station API. Selected stations may still need testing because CHS availability can vary by station and forecast window.
 
@@ -648,7 +654,7 @@ Try:
 
 If HACS still shows an old README, the installed card file may still be current while the HACS display cache is stale.
 
-If HACS shows a short value like `214b6c2` instead of `v0.9.6`, that is a GitHub commit hash. HACS shows commit hashes when a repository has tags but no full GitHub Release yet. Publishing a full GitHub Release makes HACS show the release version instead.
+If HACS shows a short value like `214b6c2` instead of `v0.9.7`, that is a GitHub commit hash. HACS shows commit hashes when a repository has tags but no full GitHub Release yet. Publishing a full GitHub Release makes HACS show the release version instead.
 
 ### Card does not show up
 

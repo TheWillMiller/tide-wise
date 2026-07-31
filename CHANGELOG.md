@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.7
+
+### Added
+
+- Added CHS visual-editor controls for manual tide time and height corrections.
+- Added direct numeric CHS station-code support and a link to the official CHS station directory.
+- Added regression coverage for CHS time offsets, height offsets, unit conversion, daylight-saving conversion, invalid rows, and station-code parsing.
+
+### Fixed
+
+- Applied `time_offset_minutes` and `height_offset` to Canadian CHS/DFO predictions instead of limiting those corrections to entity-backed providers.
+- Kept CHS API timestamps as UTC instants until the optional time correction is applied, preserving the dashboard device's daylight-saving conversion.
+
+### Changed
+
+- Clarified Canadian timestamp behavior and secondary-station corrections in the README and visual editor.
+
 ## 0.9.6
 
 ### Added
