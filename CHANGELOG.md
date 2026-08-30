@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.8
+
+### Added
+
+- Added optional `minimum_safe_tide` and `maximum_safe_tide` settings in YAML and the visual editor.
+- Added labeled minimum/maximum lines and subtle unsafe-level shading to the tide chart for bridge clearance, boat lifts, shallow channels, docks, and similar local access constraints.
+- Added chart scaling that keeps configured safe-tide limits visible even when they fall outside the current prediction range.
+- Added regression coverage for blank, invalid, zero, minimum, and maximum safe-tide values and chart rendering.
+
+### Changed
+
+- Documented safe-tide setup, unit behavior, and how to disable either limit independently.
+
 ## 0.9.7
 
 ### Added

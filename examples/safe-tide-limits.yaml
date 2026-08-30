@@ -1,0 +1,10 @@
+type: custom:tidewise-card
+title: Boat Access Tides
+provider: noaa_coops
+station: "8726520"
+units: english
+minimum_safe_tide: 0.8
+maximum_safe_tide: 2.7
+show_fishing_score: false
+auto_sources: false
+auto_surf_forecast: false
