@@ -1,11 +1,11 @@
 /*
- * TideWise Card v0.9.7
+ * TideWise Card v0.9.8
  * NOAA tides with optional bite-window fishing quality scoring.
  *
  * Legacy alias: custom:cherry-grove-tides-card
  */
 
-const CARD_VERSION = "0.9.7";
+const CARD_VERSION = "0.9.8";
 const CARD_TYPES = ["tidewise-card", "cherry-grove-tides-card"];
 const TIDEWISE_PROVIDERS = {
   noaa_coops: { label: "US NOAA CO-OPS", stationLabel: "NOAA" },
@@ -395,6 +395,8 @@ class TideWiseCard extends HTMLElement {
       ukho_time_mode: this._normalizeUkhoTimeMode(config.ukho_time_mode),
       time_offset_minutes: Number(config.time_offset_minutes) || 0,
       height_offset: Number(config.height_offset) || 0,
+      minimum_safe_tide: this._normalizeOptionalNumber(config.minimum_safe_tide),
+      maximum_safe_tide: this._normalizeOptionalNumber(config.maximum_safe_tide),
       units: config.units || "english",
       wind_units: this._normalizeWindUnits(config.wind_units),
       weather_entity: config.weather_entity || "",
@@ -867,6 +869,21 @@ class TideWiseCard extends HTMLElement {
       code: String(station.code || code),
       seriesCode: this._canadaStationSeriesCode(station)
     };
+  }
+
+  _normalizeOptionalNumber(value) {
+    if (value === undefined || value === null || String(value).trim() === "") return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  _safeTideLimits() {
+    const limits = [];
+    const minimum = this._normalizeOptionalNumber(this._config.minimum_safe_tide);
+    const maximum = this._normalizeOptionalNumber(this._config.maximum_safe_tide);
+    if (minimum !== null) limits.push({ kind: "minimum", value: minimum });
+    if (maximum !== null) limits.push({ kind: "maximum", value: maximum });
+    return limits;
   }
 
   _canadaStationCodeFromInput(value) {
@@ -2353,6 +2370,8 @@ class TideWiseCard extends HTMLElement {
         tideLine: accent,
         highMarker: this._themeColor("--primary-color", "#0a7a70"),
         lowMarker: accent,
+        minimumLimit: this._themeColor("--warning-color", "#c67800"),
+        maximumLimit: this._themeColor("--error-color", "#c04444"),
         nowMarker: this._themeColor("--warning-color", "#e8b84b"),
         markerStroke: cardBg,
         nowMarkerStroke: cardBg
@@ -2369,6 +2388,8 @@ class TideWiseCard extends HTMLElement {
       tideLine: this._themeColor("--tw-tide-line", "#2a7a94"),
       highMarker: this._themeColor("--high-color", "#0a7a70"),
       lowMarker: this._themeColor("--low-color", "#2a7a94"),
+      minimumLimit: this._themeColor("--tw-minimum-limit", "#c67800"),
+      maximumLimit: this._themeColor("--tw-maximum-limit", "#c04444"),
       nowMarker: this._themeColor("--gold", "#e8b84b"),
       markerStroke: this._themeColor("--tw-marker-stroke", "rgba(255,255,255,0.9)"),
       nowMarkerStroke: this._themeColor("--tw-now-marker-stroke", "rgba(255,255,255,0.92)")
@@ -2387,8 +2408,10 @@ class TideWiseCard extends HTMLElement {
     const ctx = canvas.getContext("2d");
     ctx.scale(dpr, dpr);
     const vals = predictions.map((p) => parseFloat(p.v));
-    const minV = Math.min(...vals) - 0.5;
-    const maxV = Math.max(...vals) + 0.5;
+    const safeLimits = this._safeTideLimits();
+    const limitValues = safeLimits.map((limit) => limit.value);
+    const minV = Math.min(...vals, ...limitValues) - 0.5;
+    const maxV = Math.max(...vals, ...limitValues) + 0.5;
     const padL = 34;
     const padR = 8;
     const padT = 8;
@@ -2452,6 +2475,41 @@ class TideWiseCard extends HTMLElement {
         ctx.fillRect(x - 12, padT, 24, cH);
       }
     }
+
+    safeLimits.forEach((limit) => {
+      const y = toY(limit.value);
+      const isMinimum = limit.kind === "minimum";
+      const color = isMinimum ? theme.minimumLimit : theme.maximumLimit;
+      ctx.save();
+      ctx.globalAlpha = 0.09;
+      ctx.fillStyle = color;
+      ctx.fillRect(padL, isMinimum ? y : padT, cW, isMinimum ? H - padB - y : y - padT);
+      ctx.restore();
+
+      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(W - padR, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const label = `${isMinimum ? "MIN" : "MAX"} ${limit.value.toFixed(1)}${unitLabel}`;
+      ctx.font = "bold 9px monospace";
+      const labelWidth = ctx.measureText(label).width;
+      const labelX = isMinimum ? W - padR - labelWidth - 10 : padL + 4;
+      const labelY = Math.max(padT, Math.min(H - padB - 15, isMinimum ? y - 17 : y + 2));
+      ctx.fillStyle = theme.labelBg;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      this._roundedRect(ctx, labelX, labelY, labelWidth + 8, 15, 4);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.textAlign = "left";
+      ctx.fillText(label, labelX + 4, labelY + 10);
+    });
 
     tideEvents.forEach((ev) => {
       const evTime = this._parseHiloTime(ev.t);
@@ -3012,6 +3070,15 @@ class TideWiseCardEditor extends HTMLElement {
     this._emitConfig(next);
   }
 
+  _setOptionalNumber(key, value) {
+    const next = { ...this._config };
+    const text = String(value ?? "").trim();
+    const number = Number(text);
+    if (text !== "" && Number.isFinite(number)) next[key] = number;
+    else delete next[key];
+    this._emitConfig(next);
+  }
+
   _setGridValue(key, value) {
     const grid = { ...(this._config.grid_options || {}) };
     if (key === "columns" && value !== "full") {
@@ -3272,6 +3339,11 @@ class TideWiseCardEditor extends HTMLElement {
     const selectedForecastArea = this._selectedForecastAreaValue();
     const mapState = this._mapState();
     const tideOffsetUnit = config.units === "metric" ? "m" : "ft";
+    const minimumSafeTide = String(config.minimum_safe_tide ?? "");
+    const maximumSafeTide = String(config.maximum_safe_tide ?? "");
+    const safeTideRangeInvalid = minimumSafeTide !== ""
+      && maximumSafeTide !== ""
+      && Number(minimumSafeTide) > Number(maximumSafeTide);
     if (provider === "chs_iwls" && !this._canadaStations && !this._canadaStationsLoading) {
       setTimeout(() => this._loadCanadaStations(), 0);
     }
@@ -3650,6 +3722,14 @@ class TideWiseCardEditor extends HTMLElement {
               </select>
             </label>
             <label>
+              Minimum safe tide (${tideOffsetUnit})
+              <input id="minimumSafeTide" type="number" step="0.1" value="${this._escape(minimumSafeTide)}" placeholder="Optional">
+            </label>
+            <label>
+              Maximum safe tide (${tideOffsetUnit})
+              <input id="maximumSafeTide" type="number" step="0.1" value="${this._escape(maximumSafeTide)}" placeholder="Optional">
+            </label>
+            <label>
               Fishing mode
               <select id="mode">
                 ${["general", "surf", "inlet", "flounder", "trout_redfish", "sheepshead"].map((mode) => `<option value="${mode}" ${config.mode === mode ? "selected" : ""}>${mode.replace("_", " / ")}</option>`).join("")}
@@ -3663,6 +3743,8 @@ class TideWiseCardEditor extends HTMLElement {
               </select>
             </label>
           </div>
+          <div class="hint">Optional safe-tide limits draw labeled lines and lightly shade unsafe water levels on the chart. Values use the selected tide unit; leave either field blank to disable that limit.</div>
+          ${safeTideRangeInvalid ? `<div class="hint"><strong>Check the safe range:</strong> minimum safe tide should not exceed maximum safe tide.</div>` : ""}
           <label class="check">
             <input id="showFishing" type="checkbox" ${config.show_fishing_score !== false ? "checked" : ""}>
             Show fishing score
@@ -3801,6 +3883,8 @@ class TideWiseCardEditor extends HTMLElement {
     this.shadowRoot.getElementById("title")?.addEventListener("change", (event) => this._setValue("title", event.target.value || "TideWise"));
     this.shadowRoot.getElementById("units")?.addEventListener("change", (event) => this._setValue("units", event.target.value));
     this.shadowRoot.getElementById("windUnits")?.addEventListener("change", (event) => this._setValue("wind_units", this._normalizeWindUnits(event.target.value)));
+    this.shadowRoot.getElementById("minimumSafeTide")?.addEventListener("change", (event) => this._setOptionalNumber("minimum_safe_tide", event.target.value));
+    this.shadowRoot.getElementById("maximumSafeTide")?.addEventListener("change", (event) => this._setOptionalNumber("maximum_safe_tide", event.target.value));
     this.shadowRoot.getElementById("mode")?.addEventListener("change", (event) => this._setValue("mode", event.target.value));
     this.shadowRoot.getElementById("themeMode")?.addEventListener("change", (event) => this._setValue("theme_mode", this._normalizeThemeMode(event.target.value)));
     this.shadowRoot.getElementById("showFishing")?.addEventListener("change", (event) => this._setValue("show_fishing_score", event.target.checked));

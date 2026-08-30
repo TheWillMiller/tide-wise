@@ -9,7 +9,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/TheWillMiller/tide-wise?label=stars)](https://github.com/TheWillMiller/tide-wise/stargazers)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-yellow?logo=buymeacoffee)](https://buymeacoffee.com/thewillmiller)
 
-**Latest release:** `v0.9.7`
+**Latest release:** `v0.9.8`
 
 TideWise is a Home Assistant dashboard (Lovelace) custom card for tide predictions, current tide height, next high/low tides, and optional fishing bite-window scoring. The default provider is NOAA CO-OPS, with early Canada CHS/DFO support, UK support through the UKHO Tides Home Assistant integration, and international beta support through compatible Home Assistant tide sensors.
 
@@ -88,6 +88,7 @@ The visual editor is the recommended setup path. Start with **Tide provider**, t
 | **Fishing point picker** | OpenStreetMap picker for the fishing/beach point. | Drag to pan, zoom in/out, click or tap to set the point, or paste exact coordinates from Maps when precision matters. Map tiles load only while the visual editor is open. |
 | **Beach / Surf Forecast** | Scopes US NWS surf/rip-current data. | This does not change the tide station. Pick a **State**, then a nearby **Coastal county / beach area**. |
 | **Card settings** | Title, units, fishing mode, theme, and optional data toggles. | These change display and scoring behavior, not the tide source itself. |
+| **Safe tide limits** | Optional minimum and maximum usable tide heights. | Draws labeled chart lines and lightly shades water levels outside the safe range. Values use the selected tide unit. |
 | **Wind units** | Controls only the displayed wind speed unit. | Use this when tide height should be metric but wind should remain MPH or Beaufort. |
 | **Dashboard Size** | Home Assistant grid sizing. | Recommended: `rows: full`, `columns: 18`. Use `columns: full` on narrower dashboards. |
 
@@ -113,6 +114,7 @@ Common setup rule: **the station/sensor controls the tide chart; the forecast co
 - Wind display when available, with optional MPH, km/h, knots, or Beaufort display
 - Next high and low tide
 - 24-hour tide chart
+- Optional minimum and maximum safe-tide lines with unsafe-level shading
 - High/low fallback for NOAA stations without full interval predictions
 - Visual editor support
 - Visual-editor fishing point picker for the weather/surf/scoring coordinates
@@ -187,7 +189,7 @@ type: module
 For quick testing before installing locally, you can add this dashboard resource:
 
 ```yaml
-url: https://cdn.jsdelivr.net/gh/TheWillMiller/tide-wise@v0.9.7/tidewise-card.js
+url: https://cdn.jsdelivr.net/gh/TheWillMiller/tide-wise@v0.9.8/tidewise-card.js
 type: module
 ```
 
@@ -219,6 +221,21 @@ station: "8661070"
 units: english
 mode: general
 ```
+
+## Safe Tide Limits
+
+Set either or both optional safe-tide limits when local access depends on water height, such as bridge clearance, canal depth, a boat lift, dock access, or a shallow channel:
+
+```yaml
+type: custom:tidewise-card
+title: Boat Access Tides
+station: "8726520"
+units: english
+minimum_safe_tide: 0.8
+maximum_safe_tide: 2.7
+```
+
+TideWise draws a labeled `MIN` or `MAX` line for each configured value and lightly shades water levels below the minimum or above the maximum. The chart scale expands when needed so configured limits remain visible. Values use the selected display unit: feet with `units: english` and metres with `units: metric`. Leave either value blank in the visual editor, or omit it from YAML, to disable that limit.
 
 ## Cherry Grove Example
 
@@ -503,6 +520,8 @@ The debug panel is collapsed by default and scrolls internally when expanded. It
 | `ukho_time_mode` | No | `uk_local` | UKHO integration-sensor time handling. Use `uk_local` to convert GMT/UTC events to UK local time including BST, or `as_is` when the sensor already exposes local clock times. |
 | `time_offset_minutes` | No | `0` | Manual minute offset applied to CHS, UKHO, or generic-entity tide events. Useful for secondary-station timing corrections. |
 | `height_offset` | No | `0` | Manual height offset applied to CHS, UKHO, or generic-entity tide heights. Uses the selected display unit: metres with `metric`, feet with `english`. |
+| `minimum_safe_tide` | No |  | Optional minimum usable tide height. Draws a labeled line and shades lower water levels. Uses the selected display unit. |
+| `maximum_safe_tide` | No |  | Optional maximum usable tide height. Draws a labeled line and shades higher water levels. Uses the selected display unit. |
 | `units` | No | `english` | Display units. Usually `english` or `metric`. Canadian CHS and UKHO data are metric and are converted to feet when `english` is selected. |
 | `wind_units` | No | `auto` | Wind display units. Use `auto`, `mph`, `kmh`, `knots`, or `beaufort`. `auto` follows the tide unit choice, so metric cards show km/h unless overridden. |
 | `mode` | No | `general` | Fishing score mode: `general`, `surf`, `inlet`, `flounder`, `trout_redfish`, or `sheepshead`. |
@@ -654,7 +673,7 @@ Try:
 
 If HACS still shows an old README, the installed card file may still be current while the HACS display cache is stale.
 
-If HACS shows a short value like `214b6c2` instead of `v0.9.7`, that is a GitHub commit hash. HACS shows commit hashes when a repository has tags but no full GitHub Release yet. Publishing a full GitHub Release makes HACS show the release version instead.
+If HACS shows a short value like `214b6c2` instead of `v0.9.8`, that is a GitHub commit hash. HACS shows commit hashes when a repository has tags but no full GitHub Release yet. Publishing a full GitHub Release makes HACS show the release version instead.
 
 ### Card does not show up
 
