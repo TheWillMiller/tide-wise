@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.9
+
+### Fixed
+
+- Escaped card titles, station labels (including Home Assistant friendly names), and error messages before inserting them into HTML.
+- Escaped CHS station IDs, names, and codes in the visual editor, along with configuration values used in input attributes.
+- Prevented markup-bearing API, entity, and configuration text from becoming active HTML in these rendering paths.
+
+### Added
+
+- Added regression tests for all four providers, entity ID fallbacks, error messages, CHS editor options, and editor attribute values containing markup, quotes, and ampersands.
+
 ## 0.9.8
 
 ### Added

@@ -1,11 +1,11 @@
 /*
- * TideWise Card v0.9.8
+ * TideWise Card v0.9.9
  * NOAA tides with optional bite-window fishing quality scoring.
  *
  * Legacy alias: custom:cherry-grove-tides-card
  */
 
-const CARD_VERSION = "0.9.8";
+const CARD_VERSION = "0.9.9";
 const CARD_TYPES = ["tidewise-card", "cherry-grove-tides-card"];
 const TIDEWISE_PROVIDERS = {
   noaa_coops: { label: "US NOAA CO-OPS", stationLabel: "NOAA" },
@@ -2039,7 +2039,7 @@ class TideWiseCard extends HTMLElement {
 
   _renderError(msg) {
     const root = this.shadowRoot.getElementById("root");
-    if (root) root.innerHTML = `<div class="error">${msg || "Could not load tide data"}</div>`;
+    if (root) root.innerHTML = `<div class="error">${this._escape(msg || "Could not load tide data")}</div>`;
   }
 
   _renderData() {
@@ -2079,8 +2079,8 @@ class TideWiseCard extends HTMLElement {
 
     root.innerHTML = `
       <div class="header">
-        <div class="title">${this._config.title}</div>
-        <div class="subtitle">${providerInfo.stationLabel} ${stationLabel}</div>
+        <div class="title">${this._escape(this._config.title)}</div>
+        <div class="subtitle">${providerInfo.stationLabel} ${this._escape(stationLabel)}</div>
       </div>
       <div class="current-row">
         <div class="current-icon">&#127754;</div>
@@ -3531,7 +3531,7 @@ class TideWiseCardEditor extends HTMLElement {
               CHS water-level station
               <select id="caStation" ${this._canadaStationsLoading ? "disabled" : ""}>
                 <option value="">${this._canadaStationsLoading ? "Loading CHS stations..." : "Choose a CHS station"}</option>
-                ${canadaStations.map((station) => `<option value="${station.id}" ${config.ca_station === station.id ? "selected" : ""}>${station.name}${station.code ? " (" + station.code + ")" : ""}</option>`).join("")}
+                ${canadaStations.map((station) => `<option value="${this._escape(station.id)}" ${config.ca_station === station.id ? "selected" : ""}>${this._escape(station.name)}${station.code ? " (" + this._escape(station.code) + ")" : ""}</option>`).join("")}
               </select>
             </label>
             <label>
@@ -3544,11 +3544,11 @@ class TideWiseCardEditor extends HTMLElement {
             </label>
             <label>
               Time offset (minutes)
-              <input id="timeOffsetMinutes" type="number" step="1" value="${config.time_offset_minutes ?? 0}" placeholder="0">
+              <input id="timeOffsetMinutes" type="number" step="1" value="${this._escape(config.time_offset_minutes ?? 0)}" placeholder="0">
             </label>
             <label>
               Height offset (${tideOffsetUnit})
-              <input id="heightOffset" type="number" step="0.01" value="${config.height_offset ?? 0}" placeholder="0">
+              <input id="heightOffset" type="number" step="0.01" value="${this._escape(config.height_offset ?? 0)}" placeholder="0">
             </label>
           </div>
           ${this._canadaStationsError ? `<div class="hint">Could not load CHS station list: ${this._escape(this._canadaStationsError)}</div>` : ""}
@@ -3577,11 +3577,11 @@ class TideWiseCardEditor extends HTMLElement {
             </label>
             <label>
               Time offset (minutes)
-              <input id="timeOffsetMinutes" type="number" step="1" value="${config.time_offset_minutes ?? 0}" placeholder="0">
+              <input id="timeOffsetMinutes" type="number" step="1" value="${this._escape(config.time_offset_minutes ?? 0)}" placeholder="0">
             </label>
             <label>
               Height offset (${tideOffsetUnit})
-              <input id="heightOffset" type="number" step="0.01" value="${config.height_offset ?? 0}" placeholder="0">
+              <input id="heightOffset" type="number" step="0.01" value="${this._escape(config.height_offset ?? 0)}" placeholder="0">
             </label>
           </div>
           ${ukhoEntityOptions.length ? "" : `<div class="hint"><strong>No UKHO Tides sensors found yet.</strong> Install and configure the UKHO Tides Home Assistant integration first, then reopen this editor or enter the sensor entity ID manually.</div>`}
@@ -3615,11 +3615,11 @@ class TideWiseCardEditor extends HTMLElement {
             </label>
             <label>
               Time offset (minutes)
-              <input id="timeOffsetMinutes" type="number" step="1" value="${config.time_offset_minutes ?? 0}" placeholder="0">
+              <input id="timeOffsetMinutes" type="number" step="1" value="${this._escape(config.time_offset_minutes ?? 0)}" placeholder="0">
             </label>
             <label>
               Height offset (${tideOffsetUnit})
-              <input id="heightOffset" type="number" step="0.01" value="${config.height_offset ?? 0}" placeholder="0">
+              <input id="heightOffset" type="number" step="0.01" value="${this._escape(config.height_offset ?? 0)}" placeholder="0">
             </label>
           </div>
           ${tideEntityOptions.length ? "" : `<div class="hint"><strong>No compatible tide sensors found yet.</strong> Choose a Home Assistant integration or template sensor that exposes prediction rows in a <code>predictions</code>, <code>tide_predictions</code>, <code>events</code>, or <code>extremes</code> attribute.</div>`}
@@ -3642,11 +3642,11 @@ class TideWiseCardEditor extends HTMLElement {
           <div class="grid">
             <label>
               Fishing / beach latitude
-              <input id="latitude" type="number" step="0.000001" value="${config.latitude ?? ""}" placeholder="33.688">
+              <input id="latitude" type="number" step="0.000001" value="${this._escape(config.latitude ?? "")}" placeholder="33.688">
             </label>
             <label>
               Fishing / beach longitude
-              <input id="longitude" type="number" step="0.000001" value="${config.longitude ?? ""}" placeholder="-78.886">
+              <input id="longitude" type="number" step="0.000001" value="${this._escape(config.longitude ?? "")}" placeholder="-78.886">
             </label>
           </div>
           <div class="map-card">
@@ -3771,7 +3771,7 @@ class TideWiseCardEditor extends HTMLElement {
             </label>
             <label>
               Columns
-              <input id="gridColumns" value="${grid.columns ?? 18}" placeholder="18 or full">
+              <input id="gridColumns" value="${this._escape(grid.columns ?? 18)}" placeholder="18 or full">
             </label>
           </div>
           <div class="hint">Recommended: rows full, columns 18. Use columns full on narrower dashboards.</div>
